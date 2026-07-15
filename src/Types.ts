@@ -88,6 +88,17 @@ export function networkEqual(a: string, b: string): boolean {
   return left.namespace === right.namespace && left.reference === right.reference
 }
 
+/** Compares chain-native addresses using the origin network's casing rules. */
+export function addressEqual(network: string, a: string, b: string): boolean {
+  try {
+    return parseCaip2(network).namespace === 'eip155'
+      ? a.toLowerCase() === b.toLowerCase()
+      : a === b
+  } catch {
+    return false
+  }
+}
+
 /**
  * Compares two CAIP-19 identifiers by parsed components.
  *

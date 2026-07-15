@@ -15,5 +15,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src", "test", "examples", "demo/server", "vitest.config.ts"]
+  "include": ["src", "test", "examples", "scripts", "demo/server", "vitest.config.ts"]
 }

@@ -67,9 +67,9 @@ export function charge(parameters: charge.Parameters = {}) {
       const request = Types.ChargeRequestSchema.parse(challenge.request)
       // Spec §Expiry: MUST NOT broadcast a deposit after `expires`.
       Expires.assert(challenge.expires, challenge.id)
-      assertPolicy(parameters.policy, request)
 
       const walletClient = context?.walletClient ?? parameters.walletClient
+      assertPolicy(parameters.policy, request)
       const hash = await (async () => {
         if (context?.hash) return context.hash
         if (parameters.sendDeposit) return parameters.sendDeposit({ challenge, request })
@@ -123,6 +123,12 @@ export declare namespace charge {
           amountOut?: string | undefined
         }
       | undefined
+    /**
+     * Expected origin-chain refund address. Set this for bring-your-own
+     * broadcast paths so the client refuses a quote that would refund a
+     * merchant or third party.
+     */
+    expectedRefundTo?: string | undefined
   }
 
   /**
@@ -164,8 +170,16 @@ export declare namespace charge {
 
 /** @internal */
 function assertPolicy(policy: charge.Policy | undefined, request: Types.ChargeRequest): void {
-  if (!policy) return
   const { methodDetails } = request
+
+  const expectedRefundTo = policy?.expectedRefundTo
+  if (
+    expectedRefundTo !== undefined &&
+    !Types.addressEqual(methodDetails.originNetwork, expectedRefundTo, methodDetails.refundTo)
+  )
+    throw new PolicyError('refund address does not match the payer address')
+
+  if (!policy) return
 
   if (
     policy.allowedOriginNetworks &&

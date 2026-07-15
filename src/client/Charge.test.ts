@@ -136,6 +136,22 @@ describe('payment policy (client safety surface)', () => {
     await expect(createCredential(pinned, challenge(), { hash: HASH })).resolves.toBeDefined()
   })
 
+  test('expectedRefundTo pins refunds for bring-your-own broadcast paths', async () => {
+    const payerControlled = charge({
+      policy: { expectedRefundTo: arbitrumUsdcRequest.methodDetails.refundTo.toLowerCase() },
+    })
+    await expect(
+      createCredential(payerControlled, challenge(), { hash: HASH }),
+    ).resolves.toBeDefined()
+
+    const wrongRefund = charge({
+      policy: { expectedRefundTo: '0x1111111111111111111111111111111111111111' },
+    })
+    await expect(createCredential(wrongRefund, challenge(), { hash: HASH })).rejects.toThrow(
+      /refund address/,
+    )
+  })
+
   test('canHandleChallenge reflects method identity and policy', () => {
     const method = charge({ policy: { allowedOriginNetworks: ['eip155:42161'] } })
     expect(method.canHandleChallenge?.({ challenge: makeChallenge(arbitrumUsdcRequest) })).toBe(

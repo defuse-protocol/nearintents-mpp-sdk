@@ -21,7 +21,13 @@ const mppx = Mppx.create({
       originAsset: 'eip155:42161/erc20:0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
       destinationAsset: 'near:mainnet/nep141:1720…33a1',
       destinationRecipient: 'merchant.near',
-      refundTo: '0x2527…C317', // merchant origin-chain refund address
+      // Resolve before minting the wet quote so refunds return to the payer.
+      // Authenticate/rate-limit this hint in a real service.
+      refundTo: ({ capturedRequest }) => {
+        const address = capturedRequest?.headers.get('near-intents-refund-to')
+        if (!address) throw new Error('missing payer refund address')
+        return address
+      },
       amountOut: '1000000', // exact amount the merchant receives (EXACT_OUTPUT)
       oneClick: { jwt: process.env.ONE_CLICK_JWT },
       // production: store: Store.redis(client) — replay protection needs an atomic store
@@ -43,15 +49,19 @@ const mppx = Mppx.create({
       policy: {
         allowedOriginNetworks: ['eip155:42161'],
         maxAmountIn: { 'eip155:42161/erc20:0xaf88…5831': '5000000' },
+        expectedRefundTo: walletClient.account.address,
       },
     }),
   ],
 })
-const response = await mppx.fetch('https://api.example.com/paid-resource')
+const response = await mppx.fetch('https://api.example.com/paid-resource', {
+  headers: { 'near-intents-refund-to': walletClient.account.address },
+})
 ```
 
 Non-EVM origins (BTC, Solana, …) pay via the `sendDeposit` callback or present
-an already-broadcast tx hash as `context.hash`.
+an already-broadcast tx hash as `context.hash`. Pin their refund address with
+`policy.expectedRefundTo` before paying.
 
 A `policy` is **strongly recommended for any autonomous payer.** The client
 always schema-validates the challenge and refuses to pay past `expires`, but
@@ -116,10 +126,16 @@ invocation, then polls a separately funded deposit in a second invocation.
 
 ## Operational notes
 
-- **Refunds.** `methodDetails.refundTo` is a **merchant-configured** address
-  on the origin chain (the server cannot know the payer before payment).
-  Every non-success terminal refunds the deposit there; payers recover
-  off-band per the merchant's terms. Disclose this in your terms of service.
+- **Refunds.** Prefer the async `refundTo` resolver and derive the address
+  from authenticated payer context before minting the executable quote. The
+  resolved value is included in the 1Click quote and signed challenge; clients
+  MUST pin it with `policy.expectedRefundTo`. A fixed string remains supported
+  for custodial merchants, but refunds then require an explicitly documented
+  off-band recovery policy.
+- **Payer hints.** A raw refund-address header is convenient for a reference
+  service but is not authentication. Validate the address format, bind it to
+  the caller, and rate-limit unique hints to prevent unbounded quote and
+  store creation.
 - **Per-origin expiry.** Size `expiresWindow` (and the mppx route `expires`)
   to the origin chain: minutes for fast chains, 45–60 minutes for Bitcoin.
   The example server creates the route handler per request so the absolute
@@ -154,6 +170,10 @@ invocation, then polls a separately funded deposit in a second invocation.
   the destination asset to the merchant or refunds the deposit. Comparable to
   entrusting a payment processor with a transfer; agents applying per-method
   risk policies can key off the `method` and `settlementBackend` fields.  
+- **Idempotency.** Hash claims and terminal consumption are atomic when the
+  configured store is atomic. The application still owns `Idempotency-Key`
+  handling for protected POST side effects; do not treat payment replay
+  protection as response-body idempotency.
 
 ## Observability
 
@@ -215,6 +235,7 @@ primitives from the spec's examples.
 ```sh
 npx pnpm@11 install   # pnpm pinned via packageManager
 pnpm check            # typecheck + lint + tests
+pnpm release:check    # full checks, build, and package-content dry run
 ```
 
 Tests are **mock-only** (in-process mock 1Click server in

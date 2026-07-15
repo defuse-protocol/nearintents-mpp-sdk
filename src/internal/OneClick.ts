@@ -179,7 +179,14 @@ export function isTerminal(status: SwapStatus): boolean {
 async function request<result>(
   config: Config,
   path: string,
-  init: { method: 'GET' | 'POST'; body?: unknown; searchParams?: Record<string, string> },
+  init: {
+    method: 'GET' | 'POST'
+    body?: unknown
+    searchParams?: Record<string, string>
+    /** Optional caller deadline for this request; capped by Config.requestTimeoutMs. */
+    timeoutMs?: number | undefined
+    signal?: AbortSignal | undefined
+  },
 ): Promise<result> {
   const baseUrl = config.baseUrl ?? defaultBaseUrl
   const fetchFn = config.fetch ?? globalThis.fetch
@@ -188,8 +195,19 @@ async function request<result>(
     url.searchParams.set(key, value)
   }
 
+  const configuredTimeoutMs = config.requestTimeoutMs ?? 30_000
+  if (!Number.isFinite(configuredTimeoutMs) || configuredTimeoutMs <= 0)
+    throw new RangeError('1Click requestTimeoutMs must be a positive finite number.')
+  if (init.timeoutMs !== undefined && (!Number.isFinite(init.timeoutMs) || init.timeoutMs <= 0))
+    throw new RangeError('1Click request timeoutMs must be a positive finite number.')
+
   let response: Response
   try {
+    const timeoutMs = Math.max(
+      1,
+      Math.ceil(Math.min(configuredTimeoutMs, init.timeoutMs ?? Number.POSITIVE_INFINITY)),
+    )
+    const timeoutSignal = AbortSignal.timeout(timeoutMs)
     response = await fetchFn(url, {
       method: init.method,
       headers: {
@@ -198,9 +216,12 @@ async function request<result>(
         ...(config.jwt && { authorization: `Bearer ${config.jwt}` }),
       },
       ...(init.body !== undefined && { body: JSON.stringify(init.body) }),
-      signal: AbortSignal.timeout(config.requestTimeoutMs ?? 30_000),
+      signal: init.signal ? combineAbortSignals(init.signal, timeoutSignal) : timeoutSignal,
     })
   } catch (error) {
+    // Preserve an explicit caller abort (for example an HTTP disconnect)
+    // instead of misclassifying it as backend unavailability.
+    init.signal?.throwIfAborted()
     throw new OneClickUnavailableError(`1Click request failed: ${init.method} ${path}`, {
       cause: error,
     })
@@ -220,6 +241,27 @@ async function request<result>(
     )
 
   return body as result
+}
+
+function combineAbortSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
+  const controller = new AbortController()
+  const cleanup = () => {
+    a.removeEventListener('abort', onA)
+    b.removeEventListener('abort', onB)
+  }
+  const abortFrom = (signal: AbortSignal) => {
+    cleanup()
+    controller.abort(signal.reason)
+  }
+  const onA = () => abortFrom(a)
+  const onB = () => abortFrom(b)
+  if (a.aborted) abortFrom(a)
+  else if (b.aborted) abortFrom(b)
+  else {
+    a.addEventListener('abort', onA, { once: true })
+    b.addEventListener('abort', onB, { once: true })
+  }
+  return controller.signal
 }
 
 function detailOf(body: unknown): string {
@@ -248,7 +290,7 @@ export type QuoteParameters = {
   amountOut: string
   /** Merchant address on the destination chain. */
   recipient: string
-  /** Merchant-configured refund address on the origin chain. */
+  /** Quote-bound refund address on the origin chain (prefer payer-controlled). */
   refundTo: string
   /** Slippage tolerance in basis points (applied to the input side). */
   slippageTolerance: number
@@ -316,6 +358,16 @@ export async function quote(config: Config, parameters: QuoteParameters): Promis
         body: result,
       })
   }
+  if (!/^\d+$/.test(quote_!.amountIn) || !/^\d+$/.test(quote_!.minAmountIn))
+    throw new OneClickError('1Click quote response contains a non-integer input amount.', {
+      body: result,
+    })
+  if (!Number.isFinite(Date.parse(quote_!.deadline)))
+    throw new OneClickError('1Click quote response contains an invalid deadline.', { body: result })
+  if (!Number.isFinite(quote_!.timeEstimate) || quote_!.timeEstimate < 0)
+    throw new OneClickError('1Click quote response contains an invalid timeEstimate.', {
+      body: result,
+    })
 
   return {
     quote: quote_ as Quote,
@@ -351,15 +403,23 @@ export async function submitDeposit(
 /** Fetches the swap status for a deposit address (`GET /v0/status`). */
 export async function getStatus(
   config: Config,
-  parameters: { depositAddress: string; depositMemo?: string | undefined },
+  parameters: {
+    depositAddress: string
+    depositMemo?: string | undefined
+    /** Per-call cap used by pollToTerminal to enforce its total budget. */
+    timeoutMs?: number | undefined
+    signal?: AbortSignal | undefined
+  },
 ): Promise<StatusResult> {
-  const { depositAddress, depositMemo } = parameters
+  const { depositAddress, depositMemo, signal, timeoutMs } = parameters
   return request<StatusResult>(config, '/v0/status', {
     method: 'GET',
     searchParams: {
       depositAddress,
       ...(depositMemo !== undefined && { depositMemo }),
     },
+    ...(timeoutMs !== undefined && { timeoutMs }),
+    ...(signal !== undefined && { signal }),
   })
 }
 
@@ -390,6 +450,10 @@ export async function pollToTerminal(
 ): Promise<StatusResult> {
   const { depositAddress, depositMemo, onStatus, signal, timeoutMs } = parameters
   const intervalMs = parameters.intervalMs ?? 2000
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+    throw new RangeError('pollToTerminal timeoutMs must be a positive finite number.')
+  if (!Number.isFinite(intervalMs) || intervalMs < 0)
+    throw new RangeError('pollToTerminal intervalMs must be a non-negative finite number.')
   const deadline = Date.now() + timeoutMs
 
   let lastStatus: SwapStatus | undefined
@@ -398,7 +462,13 @@ export async function pollToTerminal(
   while (true) {
     signal?.throwIfAborted()
     try {
-      const result = await getStatus(config, { depositAddress, depositMemo })
+      const remainingMs = Math.max(1, deadline - Date.now())
+      const result = await getStatus(config, {
+        depositAddress,
+        depositMemo,
+        timeoutMs: remainingMs,
+        signal,
+      })
       if (result.status !== lastStatus) onStatus?.(result.status)
       lastStatus = result.status
       lastError = undefined
@@ -409,11 +479,14 @@ export async function pollToTerminal(
     }
 
     if (Date.now() + intervalMs > deadline) {
+      if (lastStatus !== undefined)
+        throw new PollTimeoutError({
+          timeoutMs,
+          lastStatus,
+          ...(lastError !== undefined && { lastError }),
+        })
       if (lastError !== undefined) throw lastError
-      throw new PollTimeoutError({
-        timeoutMs,
-        ...(lastStatus !== undefined && { lastStatus }),
-      })
+      throw new PollTimeoutError({ timeoutMs })
     }
     await sleep(intervalMs, signal)
   }
@@ -479,19 +552,35 @@ export function destinationTxHash(result: StatusResult): string | undefined {
  * status-observation deposit confirmation. Hex hashes compare
  * case-insensitively; other formats (base58, …) compare exactly.
  */
-export function matchesOriginTx(result: StatusResult, hash: string): boolean {
+export function matchesOriginTx(result: StatusResult, hash: string, network?: string): boolean {
   const hashes = result.swapDetails?.originChainTxHashes ?? []
-  return hashes.some((tx) => txHashEqual(tx.hash, hash))
+  return hashes.some((tx) => txHashEqual(tx.hash, hash, network))
 }
 
-function txHashEqual(a: string, b: string): boolean {
-  const hexLike = /^(0x)?[0-9a-fA-F]{16,}$/
-  if (hexLike.test(a) && hexLike.test(b)) return normalizeHex(a) === normalizeHex(b)
+function txHashEqual(a: string, b: string, network?: string): boolean {
+  if (isHexTxHash(a) && isHexTxHash(b))
+    return canonicalTxHash(a, network) === canonicalTxHash(b, network)
   return a === b
 }
 
-function normalizeHex(hash: string): string {
-  return hash.toLowerCase().replace(/^0x/, '')
+const hexTxHash = /^(0x)?[0-9a-fA-F]{16,}$/
+
+function isHexTxHash(hash: string): boolean {
+  return hexTxHash.test(hash)
+}
+
+/**
+ * Canonical transaction-hash representation for replay-store keys. EVM and
+ * Bitcoin-family hashes compare case-insensitively and ignore the optional
+ * `0x` prefix; base58 and all other chain-native formats remain byte-for-byte
+ * exact. When `network` is omitted, an all-hex shape is treated as hex for
+ * status matching compatibility.
+ */
+export function canonicalTxHash(hash: string, network?: string): string {
+  const namespace = network ? Types.parseCaip2(network).namespace : undefined
+  const usesHexHashes = namespace === undefined || namespace === 'eip155' || namespace === 'bip122'
+  if (usesHexHashes && isHexTxHash(hash)) return hash.toLowerCase().replace(/^0x/, '')
+  return hash
 }
 
 // ---------------------------------------------------------------------------

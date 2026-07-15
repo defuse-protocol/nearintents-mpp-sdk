@@ -79,7 +79,7 @@ Include a **`CLAUDE.md` in the repo** distilling this plan's §1, §4, §5, and 
 ## 5. 1Click API essentials (settlement backend)
 
 - Base `https://1click.chaindefuser.com`; JWT via `Authorization: Bearer` (env `ONE_CLICK_JWT`, server-side only — **never in any challenge field**; unauthenticated works but costs 0.2%).
-- `POST /v0/quote` with `dry: false`, `swapType: EXACT_OUTPUT`, `refundTo` (merchant-configured origin-chain address), destination leg (asset/recipient/amount) → returns unique single-use `depositAddress`, input-amount bounds, `deadline`, `timeEstimate`, `depositMemo?`. One quote per challenge; cache per §4.1/4.3.
+- `POST /v0/quote` with `dry: false`, `swapType: EXACT_OUTPUT`, quote-bound `refundTo` (prefer a payer-controlled address resolved from authenticated request context), destination leg (asset/recipient/amount) → returns unique single-use `depositAddress`, input-amount bounds, `deadline`, `timeEstimate`, `depositMemo?`. One quote per challenge; cache per §4.1/4.3.
 - `POST /v0/deposit/submit` `{txHash, depositAddress}` right after verification — optional but accelerates processing.
 - `GET /v0/status/{depositAddress}` → poll to a terminal status: `SUCCESS | FAILED | REFUNDED | INCOMPLETE_DEPOSIT`. The response carries origin- and destination-chain tx hashes: match `payload.hash` against the origin hashes (this is the spec's deposit-confirmation step — **status-observation is the v1 default; no per-chain RPC**), and take the destination hash for the receipt `reference`.
 - Asset identifiers are 1Click-native (`nep141:…omft.near` style); the wire uses CAIP-19. Build the CAIP-19 ↔ 1Click mapping from `GET /v0/tokens` inside `internal/OneClick.ts`; compare CAIP-19 ids by parsed components (EVM addresses case-insensitively).
@@ -118,7 +118,7 @@ Deploy the reference merchant endpoint (built on the package; co-locate/share th
 
 | Decision | Default | Note |
 | --- | --- | --- |
-| `refundTo` | Merchant-configured origin-chain address | The server can't know the payer pre-payment. Trust nuance (client recovers refunds off-band) MUST be documented in README + method docs. |
+| `refundTo` | Fixed address or per-request resolver | Prefer authenticated payer context and client-side pinning. A fixed merchant address requires explicit off-band recovery terms. |
 | Deposit verification | 1Click-status-only | Per-chain origin RPC = optional pluggable hardening, not default. |
 | Challenge expires | Per-route static window sized to origin chain | Quote cache refreshes early so expires ≤ quote deadline (§4.1). |
 | Replay store | mppx `AtomicStore` (`memory` dev / `redis` prod) | Atomicity is a hard requirement (concurrency test in M2). |
