@@ -558,10 +558,11 @@ refunded to `methodDetails.refundTo`, and because the quote and deposit
 address are single-use, the same `payload.hash` cannot be retried. To pay
 again, the client re-requests the resource to obtain a **fresh challenge**
 (a new quote, hence a new deposit address), sends a new deposit, and
-submits a new credential. Consistent with {{error-codes}}, the server
-returns each non-success terminal state as a 402 carrying that fresh
-`WWW-Authenticate: Payment` challenge, which the client uses to begin a
-new attempt. Burning the original hash is therefore safe: it can never
+submits a new credential. A framework MAY have computed the challenge on
+the terminal 402 before settlement retired the quote, in which case that
+response can still echo the spent challenge. The client MUST NOT pay it
+again and MUST make another unauthenticated request to obtain the fresh
+challenge. Burning the original hash is therefore safe: it can never
 deliver the resource, and the funds it represents have been refunded.
 
 A transport failure or settlement polling timeout is not a terminal backend
