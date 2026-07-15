@@ -340,6 +340,16 @@ describe('tx hash matching', () => {
     }
     expect(OneClick.matchesOriginTx(result, 'abcdef1234567890', 'near:mainnet')).toBe(false)
   })
+
+  test('canonical hex namespaces compare transaction hashes case-insensitively', () => {
+    const result: OneClick.StatusResult = {
+      status: 'SUCCESS',
+      swapDetails: { originChainTxHashes: [{ hash: 'ABCDEF1234567890' }] },
+    }
+    expect(OneClick.matchesOriginTx(result, 'abcdef1234567890', 'xrpl:0')).toBe(true)
+    expect(OneClick.matchesOriginTx(result, '0xabcdef1234567890', 'starknet:SN_MAIN')).toBe(true)
+    expect(OneClick.matchesOriginTx(result, 'abcdef1234567890', 'stellar:pubnet')).toBe(true)
+  })
 })
 
 describe('createAssetMap (CAIP-19 ↔ 1Click asset ids)', () => {

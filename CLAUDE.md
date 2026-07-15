@@ -77,9 +77,11 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
    clients pin it with `policy.expectedRefundTo`. A raw header is only a
    transport hint—validate, authenticate,
    and rate-limit it. Fixed merchant addresses require off-band recovery terms.
-10. **Hash canonicalization is chain-aware:** hex hashes compare
-    case-insensitively without an optional `0x` prefix; base58 and other
-    chain-native formats remain case-sensitive. Never lowercase all store keys.
+10. **Hash canonicalization is chain-aware:** transaction identifiers compare
+    according to the origin chain's canonical encoding. Known hexadecimal
+    namespaces compare case-insensitively without an optional `0x` prefix;
+    base58/base64 and other chain-native formats remain case-sensitive. Never
+    lowercase all store keys.
     A terminal status retires a quote only after the presented hash matches the
     backend-observed origin transaction.
 

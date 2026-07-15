@@ -565,6 +565,17 @@ function txHashEqual(a: string, b: string, network?: string): boolean {
 
 const hexTxHash = /^(0x)?[0-9a-fA-F]{16,}$/
 
+// CAIP namespaces whose transaction identifiers are canonically hexadecimal.
+// Keep base58/base64 families out even when a particular identifier happens
+// to contain only hexadecimal characters.
+const caseInsensitiveHexHashNamespaces = new Set([
+  'bip122',
+  'eip155',
+  'stellar',
+  'starknet',
+  'xrpl',
+])
+
 function isHexTxHash(hash: string): boolean {
   return hexTxHash.test(hash)
 }
@@ -578,7 +589,7 @@ function isHexTxHash(hash: string): boolean {
  */
 export function canonicalTxHash(hash: string, network?: string): string {
   const namespace = network ? Types.parseCaip2(network).namespace : undefined
-  const usesHexHashes = namespace === undefined || namespace === 'eip155' || namespace === 'bip122'
+  const usesHexHashes = namespace === undefined || caseInsensitiveHexHashNamespaces.has(namespace)
   if (usesHexHashes && isHexTxHash(hash)) return hash.toLowerCase().replace(/^0x/, '')
   return hash
 }
