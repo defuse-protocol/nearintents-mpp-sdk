@@ -250,7 +250,7 @@ export default function App() {
           </h1>
           <p className="muted">
             Pay on any supported chain — the merchant receives an exact amount on theirs, settled by
-            NEAR Intents. This demo runs the real <code>mpp-nearintents</code> client in your
+            NEAR Intents. This demo runs the real <code>nearintents-mpp-sdk</code> client in your
             browser.
           </p>
         </div>

@@ -22,7 +22,7 @@ import * as Types from '../Types.js'
  * @example
  * ```ts
  * import { Mppx } from 'mppx/server'
- * import { nearintents } from 'mpp-nearintents/server'
+ * import { nearintents } from '@defuse-protocol/nearintents-mpp-sdk/server'
  *
  * const mppx = Mppx.create({
  *   secretKey: process.env.MPP_SECRET_KEY!,
@@ -99,14 +99,14 @@ export function charge(parameters: charge.Parameters) {
     if (!assetId) assetId = (await getAssetMap(true)).toAssetId(caip19Id)
     if (!assetId)
       throw new Error(
-        `mpp-nearintents: asset "${caip19Id}" is not on the 1Click token list — check the merchant configuration (or extend oneClick.networks).`,
+        `nearintents-mpp-sdk: asset "${caip19Id}" is not on the 1Click token list — check the merchant configuration (or extend oneClick.networks).`,
       )
     return assetId
   }
 
-  const depositKey = (address: string) => `mpp-nearintents:deposit:${address}` as const
-  const quoteKey = (identity: string) => `mpp-nearintents:quote:${identity}` as const
-  const hashKey = (hash: string) => `mpp-nearintents:hash:${hash.toLowerCase()}` as const
+  const depositKey = (address: string) => `nearintents-mpp-sdk:deposit:${address}` as const
+  const quoteKey = (identity: string) => `nearintents-mpp-sdk:quote:${identity}` as const
+  const hashKey = (hash: string) => `nearintents-mpp-sdk:hash:${hash.toLowerCase()}` as const
 
   function identityOf(amountOut: string): string {
     return [
@@ -167,7 +167,7 @@ export function charge(parameters: charge.Parameters) {
     // static expires window, the route is misconfigured — fail loud.
     if (Date.parse(quote.deadline) <= Date.now() + expiresWindowMs)
       throw new Error(
-        `mpp-nearintents: 1Click quote deadline (${quote.deadline}) does not cover the route's expires window (${expiresWindowMs / 1000}s) — lower expiresWindow or raise quoteDeadlineBuffer.`,
+        `nearintents-mpp-sdk: 1Click quote deadline (${quote.deadline}) does not cover the route's expires window (${expiresWindowMs / 1000}s) — lower expiresWindow or raise quoteDeadlineBuffer.`,
       )
 
     const request: Types.ChargeRequest = {
@@ -279,7 +279,7 @@ export function charge(parameters: charge.Parameters) {
         defaultAmountOut
       if (!amountOut || amountOut === '0')
         throw new Error(
-          'mpp-nearintents: amountOut is required — set it in charge({ amountOut }) or per route via methodDetails.amountOut.',
+          'nearintents-mpp-sdk: amountOut is required — set it in charge({ amountOut }) or per route via methodDetails.amountOut.',
         )
 
       // Credential-bearing request: resolve the quote the challenge was
@@ -407,7 +407,7 @@ export function charge(parameters: charge.Parameters) {
           // a backend anomaly worth failing loudly on (500), not a 402.
           if (!reference)
             throw new Error(
-              `mpp-nearintents: swap for ${recipient} reached SUCCESS but reported no settlement transaction hash.`,
+              `nearintents-mpp-sdk: swap for ${recipient} reached SUCCESS but reported no settlement transaction hash.`,
             )
           const receipt = Types.toReceipt({
             challengeId: challenge.id,
@@ -523,9 +523,9 @@ export declare namespace charge {
   type QuotePointer = { identity: string; depositAddress: string }
 
   type StoreItemMap = {
-    [key: `mpp-nearintents:deposit:${string}`]: DepositState
-    [key: `mpp-nearintents:quote:${string}`]: QuotePointer
-    [key: `mpp-nearintents:hash:${string}`]: HashState
+    [key: `nearintents-mpp-sdk:deposit:${string}`]: DepositState
+    [key: `nearintents-mpp-sdk:quote:${string}`]: QuotePointer
+    [key: `nearintents-mpp-sdk:hash:${string}`]: HashState
   }
 
   type Defaults = Types.ChargeRequest

@@ -5,12 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+# First-party actions only (actions/*): the defuse-protocol org restricts
+# third-party actions, so pnpm comes from corepack + the packageManager pin
+# instead of pnpm/action-setup.
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - run: npm install -g corepack && corepack enable
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -28,7 +31,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - run: npm install -g corepack && corepack enable
       - uses: actions/setup-node@v6
         with:
           node-version: 24

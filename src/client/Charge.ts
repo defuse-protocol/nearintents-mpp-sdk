@@ -23,7 +23,7 @@ import * as Types from '../Types.js'
  * @example
  * ```ts
  * import { Mppx } from 'mppx/client'
- * import { nearintents } from 'mpp-nearintents/client'
+ * import { nearintents } from '@defuse-protocol/nearintents-mpp-sdk/client'
  *
  * const mppx = Mppx.create({
  *   methods: [
@@ -75,7 +75,7 @@ export function charge(parameters: charge.Parameters = {}) {
         if (parameters.sendDeposit) return parameters.sendDeposit({ challenge, request })
         if (walletClient) return broadcastEvmDeposit(walletClient, request)
         throw new Error(
-          'mpp-nearintents: no way to pay — provide context.hash, a sendDeposit callback, or a walletClient.',
+          'nearintents-mpp-sdk: no way to pay — provide context.hash, a sendDeposit callback, or a walletClient.',
         )
       })()
 
@@ -227,15 +227,15 @@ async function broadcastEvmDeposit(
   const currency = Types.parseCaip19(request.currency)
   if (currency.chain.namespace !== 'eip155')
     throw new Error(
-      `mpp-nearintents: the built-in wallet broadcast only supports eip155 origins (got ${request.methodDetails.originNetwork}); use sendDeposit or context.hash.`,
+      `nearintents-mpp-sdk: the built-in wallet broadcast only supports eip155 origins (got ${request.methodDetails.originNetwork}); use sendDeposit or context.hash.`,
     )
   if (request.methodDetails.depositMemo != null)
-    throw new Error('mpp-nearintents: EVM deposits cannot carry a deposit memo.')
+    throw new Error('nearintents-mpp-sdk: EVM deposits cannot carry a deposit memo.')
 
   const expectedChainId = Number(currency.chain.reference)
   if (walletClient.chain?.id !== expectedChainId)
     throw new Error(
-      `mpp-nearintents: wallet is on chain ${walletClient.chain?.id ?? 'unknown'} but the challenge origin is eip155:${expectedChainId}.`,
+      `nearintents-mpp-sdk: wallet is on chain ${walletClient.chain?.id ?? 'unknown'} but the challenge origin is eip155:${expectedChainId}.`,
     )
 
   const amount = BigInt(request.amount)
@@ -261,7 +261,7 @@ async function broadcastEvmDeposit(
       hash: hash as `0x${string}`,
     })
     if (receipt.status && receipt.status !== 'success')
-      throw new Error(`mpp-nearintents: deposit transaction ${hash} reverted.`)
+      throw new Error(`nearintents-mpp-sdk: deposit transaction ${hash} reverted.`)
   }
 
   return hash

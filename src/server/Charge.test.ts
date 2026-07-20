@@ -245,7 +245,7 @@ describe('replay protection', () => {
     const { handler, store } = await setup()
     const challenge = await get402(handler)
     // Simulate a crashed settlement that left a stale in-flight claim.
-    await store.put(`mpp-nearintents:hash:${HASH.toLowerCase()}`, {
+    await store.put(`nearintents-mpp-sdk:hash:${HASH.toLowerCase()}`, {
       state: 'inflight',
       leaseUntil: Date.now() - 1000,
     })
@@ -260,7 +260,7 @@ describe('quote rotation → binding mismatch → fresh challenge (client recove
     const spent = (challenge.request as Types.ChargeRequest).recipient
 
     // Simulate rotation: the quote behind the echoed challenge is spent.
-    const key = `mpp-nearintents:deposit:${spent}`
+    const key = `nearintents-mpp-sdk:deposit:${spent}`
     const deposit = (await store.get(key)) as Record<string, unknown>
     await store.put(key, { ...deposit, state: 'settled' })
 

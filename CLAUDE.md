@@ -1,4 +1,4 @@
-# mpp-nearintents
+# nearintents-mpp-sdk
 
 Reference implementation of the **`nearintents` payment method for MPP**
 (Machine Payments Protocol) as a TypeScript package extending
@@ -103,8 +103,9 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
 - Docker is unavailable; tests are **mock-only** (in-process mock 1Click).
   Never call live 1Click from CI or the test suite.
 - ESM-only, Biome (single quotes, no semicolons), vitest, changesets.
-- `private: true` until the npm scope decision (`@near-intents/*` vs
-  `@defuse-protocol/*`) — required before first publish, not before.
+- `private: true` until the first publish. The npm name is decided:
+  **`@defuse-protocol/nearintents-mpp-sdk`** (repo-aligned, org-scoped —
+  Lightning precedent). Drop `private` in the publish PR only.
 
 ## Definition of done (v1)
 

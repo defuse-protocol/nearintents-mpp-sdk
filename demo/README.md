@@ -1,7 +1,7 @@
 # Demo — cross-chain 402 in the browser
 
 A merchant with two paid endpoints (`demo/server`) and a browser storefront
-(`demo/app`) that pays them by running the **real `mpp-nearintents` client**
+(`demo/app`) that pays them by running the **real `nearintents-mpp-sdk` client**
 in the page:
 
 - **Alpha terminal** — 0.10 USDC to the merchant, paid from **Arbitrum USDC**

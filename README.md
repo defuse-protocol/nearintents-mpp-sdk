@@ -1,4 +1,4 @@
-# mpp-nearintents
+# nearintents-mpp-sdk
 
 Reference implementation of the **`nearintents` payment method** for
 [MPP (Machine Payments Protocol)](https://mpp.dev) enabling cross-chain HTTP 402
@@ -12,7 +12,7 @@ Server (see [`src/server/Charge.ts`](src/server/Charge.ts) for all options):
 
 ```ts
 import { Mppx } from 'mppx/server'
-import { nearintents } from 'mpp-nearintents/server'
+import { nearintents } from '@defuse-protocol/nearintents-mpp-sdk/server'
 
 const mppx = Mppx.create({
   secretKey: process.env.MPP_SECRET_KEY!,
@@ -34,7 +34,7 @@ Client (policy is the safety surface — the client pays before delivery):
 
 ```ts
 import { Mppx } from 'mppx/client'
-import { nearintents } from 'mpp-nearintents/client'
+import { nearintents } from '@defuse-protocol/nearintents-mpp-sdk/client'
 
 const mppx = Mppx.create({
   methods: [
