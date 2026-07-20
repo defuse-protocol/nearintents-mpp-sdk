@@ -67,7 +67,7 @@
     "zod": "^4.4.3"
   },
   "peerDependencies": {
-    "mppx": "0.8.7",
+    "mppx": "0.8.12",
     "viem": "^2.0.0"
   },
   "peerDependenciesMeta": {
@@ -79,7 +79,7 @@
     "@biomejs/biome": "^2.5.3",
     "@changesets/cli": "^2.31.0",
     "@types/node": "^26.1.1",
-    "mppx": "0.8.7",
+    "mppx": "0.8.12",
     "tsx": "^4.23.1",
     "typescript": "~6.0.3",
     "viem": "^2.55.1",
