@@ -1,4 +1,5 @@
 packages:
+  - .
   - demo/app
 allowBuilds:
   # esbuild's postinstall fetches its platform binary (needed by vitest).

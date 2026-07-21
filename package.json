@@ -1,11 +1,14 @@
 {
   "name": "@defuse-protocol/nearintents-mpp-sdk",
   "version": "0.0.0",
-  "private": true,
   "description": "Reference implementation of the `nearintents` payment method for MPP (Machine Payments Protocol) \u2014 cross-chain HTTP 402 payments settled by NEAR Intents. Extends mppx.",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/defuse-protocol/nearintents-mpp-sdk.git"
@@ -57,6 +60,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "prepack": "pnpm build",
+    "release": "pnpm build && changeset publish",
     "test": "vitest run"
   },
   "packageManager": "pnpm@11.10.0",
