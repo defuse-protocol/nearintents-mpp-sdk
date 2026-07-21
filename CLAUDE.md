@@ -106,7 +106,9 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
 - Published as **`@defuse-protocol/nearintents-mpp-sdk`** with npm provenance.
   Releases flow through changesets: PRs that change published behavior add a
   changeset; the release workflow maintains a "Version Packages" PR whose
-  merge builds and publishes (needs the `NPM_TOKEN` repo secret). The
+  merge builds and publishes via **npm Trusted Publishing** (OIDC — no npm
+  token anywhere; the publisher on npmjs.com is bound to this repo, the
+  `release.yml` workflow, and the `npm-publish` GitHub environment). The
   defuse-protocol org requires every workflow action pinned to a full-length
   commit SHA.
 
