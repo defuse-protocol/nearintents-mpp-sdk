@@ -10,18 +10,21 @@ concurrency: release-${{ github.ref }}
 permissions:
   contents: write # version-PR branch, tags, GitHub releases
   pull-requests: write # open/update the "Version Packages" PR
-  id-token: write # npm provenance attestation
+  id-token: write # npm Trusted Publishing (OIDC) + provenance
 
 # While unreleased changesets exist on main, this maintains a "Version
 # Packages" PR (version bump + CHANGELOG). Merging that PR re-triggers the
 # workflow with no pending changesets, which runs `pnpm release` and publishes
-# to npm with provenance. Requires the NPM_TOKEN repo secret (granular
-# automation token with publish rights on the @defuse-protocol scope).
+# to npm via TRUSTED PUBLISHING: no npm token anywhere — npm exchanges this
+# job's GitHub OIDC identity (org/repo/workflow/environment must match the
+# trusted publisher configured on npmjs.com for the package) for a short-lived
+# credential, and generates provenance automatically.
 # Org policy: every action pinned to a full-length commit SHA (`# vN`
 # comments are what Dependabot updates).
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: npm-publish
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -31,7 +34,14 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # Trusted publishing requires a recent npm (OIDC credential exchange).
+      - run: npm install -g npm@latest
       - run: pnpm install --frozen-lockfile
+      # changesets/action expects npm auth to exist; with trusted publishing
+      # there is none. A bare user .npmrc satisfies its presence check without
+      # injecting any credential (npm then falls through to OIDC).
+      - run: |
+          [ -f "$HOME/.npmrc" ] || echo "registry=https://registry.npmjs.org/" > "$HOME/.npmrc"
       - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           publish: pnpm release
@@ -39,4 +49,3 @@ jobs:
           commit: 'chore: version package'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
