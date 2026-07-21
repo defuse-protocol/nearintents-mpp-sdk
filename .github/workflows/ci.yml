@@ -38,6 +38,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm add -D mppx@latest
+      # -w: this intentionally targets the workspace root package.
+      - run: pnpm add -D -w mppx@latest
       - run: pnpm check:types || true
       - run: pnpm test

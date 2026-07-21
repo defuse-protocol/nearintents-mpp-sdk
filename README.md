@@ -206,6 +206,14 @@ that lets the method-specific receipt fields (`challengeId`, `originTxHash`,
 `destinationNetwork`) survive the `Payment-Receipt` codec; earlier releases
 strip them. mppx is an exact-pinned peer dependency while it is pre-1.0.
 
+### Releasing
+
+Releases are automated with [changesets](https://github.com/changesets/changesets):
+PRs that change published behavior include one (`pnpm changeset`). On merge to
+`main`, the release workflow maintains a "Version Packages" PR; merging *that*
+builds and publishes to npm with
+[provenance](https://docs.npmjs.com/generating-provenance-statements).
+
 ## License
 
 [MIT](LICENSE)

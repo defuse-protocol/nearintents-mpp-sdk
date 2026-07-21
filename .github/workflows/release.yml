@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# One release train at a time; queued pushes fold into the next run.
+concurrency: release-${{ github.ref }}
+
+permissions:
+  contents: write # version-PR branch, tags, GitHub releases
+  pull-requests: write # open/update the "Version Packages" PR
+  id-token: write # npm provenance attestation
+
+# While unreleased changesets exist on main, this maintains a "Version
+# Packages" PR (version bump + CHANGELOG). Merging that PR re-triggers the
+# workflow with no pending changesets, which runs `pnpm release` and publishes
+# to npm with provenance. Requires the NPM_TOKEN repo secret (granular
+# automation token with publish rights on the @defuse-protocol scope).
+# Org policy: every action pinned to a full-length commit SHA (`# vN`
+# comments are what Dependabot updates).
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+      - run: npm install -g corepack && corepack enable
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          publish: pnpm release
+          title: 'chore: version package'
+          commit: 'chore: version package'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

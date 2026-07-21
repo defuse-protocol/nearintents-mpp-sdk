@@ -103,9 +103,12 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
 - Docker is unavailable; tests are **mock-only** (in-process mock 1Click).
   Never call live 1Click from CI or the test suite.
 - ESM-only, Biome (single quotes, no semicolons), vitest, changesets.
-- `private: true` until the first publish. The npm name is decided:
-  **`@defuse-protocol/nearintents-mpp-sdk`** (repo-aligned, org-scoped —
-  Lightning precedent). Drop `private` in the publish PR only.
+- Published as **`@defuse-protocol/nearintents-mpp-sdk`** with npm provenance.
+  Releases flow through changesets: PRs that change published behavior add a
+  changeset; the release workflow maintains a "Version Packages" PR whose
+  merge builds and publishes (needs the `NPM_TOKEN` repo secret). The
+  defuse-protocol org requires every workflow action pinned to a full-length
+  commit SHA.
 
 ## Definition of done (v1)
 
