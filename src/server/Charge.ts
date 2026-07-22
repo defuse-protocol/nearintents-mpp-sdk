@@ -380,7 +380,14 @@ export function charge(parameters: charge.Parameters) {
             emit({ type: 'settlement.status', depositAddress: recipient, status: observed }),
         })
 
-        // Any terminal state spends the quote and its deposit address.
+        // Any terminal state spends the quote and its deposit address —
+        // including SUCCESS whose observed deposits don't match the presented
+        // hash (below). Retiring here, before that match check, is deliberate:
+        // once the backend reaches SUCCESS the deposit is delivered, so the
+        // quote MUST leave rotation regardless of which credential presented
+        // it. Deferring the retire until after a match check would strand a
+        // backend-settled deposit as "active" in the store, and a later
+        // cache hit could hand a fresh payer an already-spent deposit address.
         await retireDeposit(recipient, deposit.identity)
         emit({
           type: 'settlement.terminal',
@@ -578,11 +585,22 @@ export declare namespace charge {
     /** Prefix prepended to every store key. */
     storeKeyPrefix?: string | undefined
     /**
-     * The route's challenge-expiry window in seconds. MUST match the
-     * `expires` option configured on the mppx route (mppx computes `expires`
-     * per route, outside this method's control); it sizes the quote-cache
-     * early refresh so `expires` ≤ quote deadline always holds. Size it to
-     * the origin chain (minutes for fast chains, 45–60 min for BTC).
+     * The route's challenge-expiry window in seconds.
+     *
+     * **MUST equal the `expires` you pass to the mppx route** (`mppx.charge({
+     * expires })`). mppx computes the challenge `expires` per route, before
+     * this method's `request` hook runs and unreadable by it, so the window
+     * cannot be auto-derived — it is a manual coupling the caller owns.
+     *
+     * It sizes the quote-cache early refresh so the invariant "advertised
+     * `expires` ≤ quote deadline" holds. If the route `expires` is set
+     * **larger** than `expiresWindow`, that invariant can break near the
+     * cache-staleness boundary: a challenge may advertise an `expires` after
+     * the quote deadline, and a client depositing just before `expires` lands
+     * after the deadline and is refunded rather than swapped (no fund loss —
+     * the client recovers with a fresh challenge — but wasted gas and a silent
+     * UX failure). Keep the two values identical. Size to the origin chain
+     * (minutes for fast chains, 45–60 min for BTC).
      * @default 300
      */
     expiresWindow?: number | undefined

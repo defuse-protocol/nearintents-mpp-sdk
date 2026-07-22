@@ -53,6 +53,14 @@ const response = await mppx.fetch('https://api.example.com/paid-resource')
 Non-EVM origins (BTC, Solana, …) pay via the `sendDeposit` callback or present
 an already-broadcast tx hash as `context.hash`.
 
+A `policy` is **strongly recommended for any autonomous payer.** The client
+always schema-validates the challenge and refuses to pay past `expires`, but
+the *value* checks — allowed origin networks/assets, per-asset `maxAmountIn`
+caps, and the expected destination leg — only run when a `policy` is
+configured. Without one, the client will pay any authentic challenge the
+server presents; the policy is the client's safety surface since it pays
+before delivery.
+
 ## Demo
 
 [`demo/`](demo/README.md) is a browser storefront that runs the real client in
@@ -95,7 +103,21 @@ configured `policy.maxAmountIn` caps.
 - **Per-origin expiry.** Size `expiresWindow` (and the mppx route `expires`)
   to the origin chain: minutes for fast chains, 45–60 minutes for Bitcoin.
   The example server creates the route handler per request so the absolute
-  mppx `expires` becomes a rolling window.
+  mppx `expires` becomes a rolling window. **`charge({ expiresWindow })` MUST
+  equal the `expires` you pass to `mppx.charge({ expires })`** — mppx computes
+  the challenge `expires` before this method can read it, so the coupling is
+  manual. Setting the route `expires` *larger* than `expiresWindow` can make a
+  challenge advertise an `expires` past the quote deadline; a client depositing
+  just before it is refunded instead of swapped (recoverable, but wasteful).
+  The example/demo servers keep the two in lock-step.
+- **Under-deposits are terminal.** If a deposit lands below
+  `methodDetails.minAmountIn`, 1Click reports `INCOMPLETE_DEPOSIT`, which this
+  method treats as a terminal outcome (per spec §Settlement): the deposit is
+  refunded to `refundTo`, the credential is consumed, and the client recovers
+  with a fresh challenge — it does **not** hold the quote open waiting for a
+  top-up (that is async-delivery territory, out of scope here). Backend
+  aggregation of multiple deposits that reach `SUCCESS` *is* honored: any one
+  of the observed origin-chain tx hashes is accepted as the credential.
 - **Per-origin minimums.** Bridged origins enforce minimum deposit amounts
   (e.g. native BTC rides the PoA bridge, minimum ≈ a few USD at the time of
   writing — live 1Click rejects quotes below it with `400 Amount is too low
