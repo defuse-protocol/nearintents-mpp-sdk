@@ -130,7 +130,10 @@ function serveStatic(route: string): Response | undefined {
   if (!fs.existsSync(appDist)) return undefined
   const relative = route === '/' ? 'index.html' : route.slice(1)
   const resolved = path.resolve(appDist, relative)
-  if (!resolved.startsWith(appDist)) return undefined
+  // Reject anything that escapes appDist. `startsWith(appDist)` alone would
+  // admit sibling dirs like `<appDist>-evil`; compare the relative path.
+  const rel = path.relative(appDist, resolved)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return undefined
   const file = fs.existsSync(resolved) ? resolved : path.join(appDist, 'index.html')
   if (!fs.existsSync(file)) return undefined
   return new Response(fs.readFileSync(file), {

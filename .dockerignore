@@ -1,0 +1,14 @@
+# Docker build context is the filesystem, not git — so .env is NOT excluded by
+# .gitignore here. Keep secrets and build cruft out of the image (Dockerfile
+# uses `COPY . .`).
+.env
+.env.*
+!.env.example
+
+.git
+node_modules
+dist
+demo/app/dist
+coverage
+*.log
+*.tgz
