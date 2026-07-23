@@ -1,5 +1,14 @@
 # @defuse-protocol/nearintents-mpp-sdk
 
+## 0.1.1
+
+### Patch Changes
+
+- 078e49d: Bumped the pinned `mppx` peer dependency to `0.8.13` (verified: receipt
+  extension fields round-trip and the full mock-1Click e2e suite passes against
+  it) and improved the README (clearer client policy guidance, reorganized
+  operational notes).
+
 ## 0.1.0
 
 ### Minor Changes
