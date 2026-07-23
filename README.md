@@ -30,7 +30,7 @@ const mppx = Mppx.create({
 })
 ```
 
-Client (policy is the safety surface — the client pays before delivery):
+Client (`policy` as safety surface, the client pays before delivery):
 
 ```ts
 import { Mppx } from 'mppx/client'
@@ -61,6 +61,27 @@ configured. Without one, the client will pay any authentic challenge the
 server presents; the policy is the client's safety surface since it pays
 before delivery.
 
+## How it works
+
+1. The server answers an unpaid request with `402` + `WWW-Authenticate:
+   Payment` whose `request` carries a unique, single-use **1Click deposit
+   address** as `recipient`, the origin-chain leg the client pays (`amount`,
+   `currency`), and the merchant's destination leg in `methodDetails`.
+2. The client pays the source asset on its origin chain and retries with the
+   confirmed transaction hash as a `{type: "hash"}` credential.
+3. The server verifies the deposit via the 1Click status endpoint, drives the
+   cross-chain swap to `SUCCESS`, and returns the resource with a
+   `Payment-Receipt` carrying `challengeId`, `originTxHash`, and the
+   destination-chain delivery hash.
+
+Quotes use `EXACT_OUTPUT`, so the merchant receives a deterministic amount of
+its chosen asset on its chosen chain. 
+
+Note that settlement is not trustless: deposits are custodied by the NEAR Intents 
+settlement system for the duration of the swap, with automatic refunds 
+to `methodDetails.refundTo` on every non-success outcome. 
+See the spec's Trust Model section.
+
 ## Demo
 
 [`demo/`](demo/README.md) is a browser storefront that runs the real client in
@@ -90,12 +111,6 @@ configured `policy.maxAmountIn` caps.
 
 ## Operational notes
 
-- **Trust model.** Settlement is not trustless: for the duration of the swap
-  the deposit is custodied by the NEAR Intents settlement system
-  (`methodDetails.settlementBackend: "near-intents"`), which either delivers
-  the destination asset to the merchant or refunds the deposit. Comparable to
-  entrusting a payment processor with a transfer; agents applying per-method
-  risk policies can key off the `method` and `settlementBackend` fields.
 - **Refunds.** `methodDetails.refundTo` is a **merchant-configured** address
   on the origin chain (the server cannot know the payer before payment).
   Every non-success terminal refunds the deposit there; payers recover
@@ -118,10 +133,6 @@ configured `policy.maxAmountIn` caps.
   top-up (that is async-delivery territory, out of scope here). Backend
   aggregation of multiple deposits that reach `SUCCESS` *is* honored: any one
   of the observed origin-chain tx hashes is accepted as the credential.
-- **Per-origin minimums.** Bridged origins enforce minimum deposit amounts
-  (e.g. native BTC rides the PoA bridge, minimum ≈ a few USD at the time of
-  writing — live 1Click rejects quotes below it with `400 Amount is too low
-  for bridge`). Micro-prices belong on fast, cheap origins like Arbitrum/Base.
 - **Slow settlements.** `verify` holds the connection at most
   `settlementTimeout` seconds, then returns **504** with a problem body —
   the credential is *not* consumed and the client re-presents the same
@@ -132,6 +143,12 @@ configured `policy.maxAmountIn` caps.
 - **After a failed settlement** the immediate 402 echoes the spent challenge
   (mppx computes the retry challenge before `verify` runs); the client's next
   request receives a fresh quote. Conformant clients re-request on 402.
+- **Trust model.** Settlement is not trustless: for the duration of the swap
+  the deposit is custodied by the NEAR Intents settlement system
+  (`methodDetails.settlementBackend: "near-intents"`), which either delivers
+  the destination asset to the merchant or refunds the deposit. Comparable to
+  entrusting a payment processor with a transfer; agents applying per-method
+  risk policies can key off the `method` and `settlementBackend` fields.  
 
 ## Observability
 
@@ -154,8 +171,7 @@ mppx.on('payment.failed', ({ error }) => logger.warn(error.type, error.message))
 ```
 
 `settlement.suspended` (backend unavailable / settlement timeout) means the
-credential was **not** consumed and the client will re-present it. Handler
-errors are swallowed — observers can never affect payment processing. The
+credential was **not** consumed and the client will re-present it. The
 example and demo servers wire `onEvent` to the console, so `pnpm
 example:server` shows each payment progressing live. Everything the events
 carry (deposit addresses, tx hashes) is public on-chain data.
@@ -163,7 +179,7 @@ carry (deposit addresses, tx hashes) is public on-chain data.
 ## Advanced: the settlement core
 
 The spec's server steps 7 ("verify deposit") and 8 ("submit + await swap
-finality") are implemented *inside* the method's `verify()` — merchants never
+finality") are implemented *inside* the method's `verify()`. Merchants never
 call them directly, and the safety rails (atomic in-flight hash claim,
 consume-on-terminal, release-on-5xx) live in that sequence. This package uses
 **status observation** (spec §Verification step 3, second mode): 1Click
@@ -177,29 +193,7 @@ tooling), the underlying 1Click client is exported as the `OneClick`
 namespace: `quote`, `submitDeposit`, `getStatus`, `pollToTerminal`,
 `matchesOriginTx`, `destinationTxHash`, `terminalError`, plus the CAIP-19 ↔
 1Click asset mapping (`createAssetMap`). If you drive settlement yourself you
-also own replay protection — prefer re-presenting the credential to the
-method (the 503/504 flow) over hand-rolling steps 7–8.
-
-## How it works
-
-1. The server answers an unpaid request with `402` + `WWW-Authenticate:
-   Payment` whose `request` carries a unique, single-use **1Click deposit
-   address** as `recipient`, the origin-chain leg the client pays (`amount`,
-   `currency`), and the merchant's destination leg in `methodDetails`.
-2. The client pays the source asset on its origin chain and retries with the
-   confirmed transaction hash as a `{type: "hash"}` credential.
-3. The server verifies the deposit via the 1Click status endpoint, drives the
-   cross-chain swap to `SUCCESS`, and returns the resource with a
-   `Payment-Receipt` carrying `challengeId`, `originTxHash`, and the
-   destination-chain delivery hash.
-
-Quotes use `EXACT_OUTPUT`, so the merchant receives a deterministic amount of
-its chosen asset on its chosen chain. 
-
-Note that settlement is not trustless: deposits
-are custodied by the NEAR Intents settlement system for the duration of the
-swap, with automatic refunds to `methodDetails.refundTo` on every non-success
-outcome. See the spec's Trust Model section.
+also own replay protection.
 
 ## Spec
 

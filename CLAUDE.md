@@ -122,6 +122,15 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
   quote rotation → binding mismatch recovery.
 - `Payment-Receipt` carries `challengeId`, `originTxHash`
   (+ `destinationNetwork`) per the spec's receipt table.
-- One real small-amount cross-chain payment via the example server (manual).
-- Reference endpoint deployed; mpp.dev method page + service-directory PRs;
-  package published under the final npm scope.
+- One real small-amount cross-chain payment via the example server (manual). ✓
+- Package published as `@defuse-protocol/nearintents-mpp-sdk` with provenance;
+  mpp.dev method-page PR opened. ✓
+
+**Deliberately out of scope for v1** (revisit when a real product endpoint
+exists — e.g. the x402/1CS gateway, which shares this settlement core): hosting
+a public reference endpoint and the mpp.dev service-directory (`services.ts`) /
+MPPScan registration. The directory lists *live* services and implies an
+operational commitment (uptime, JWT rotation, merchant reconciliation); a
+synthetic demo is the wrong first entry. The demo remains runnable locally
+(`pnpm demo:server` + `demo:app`) and the root `Dockerfile` stays deploy-ready
+for when that decision flips.

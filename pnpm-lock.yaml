@@ -22,8 +22,8 @@ importers:
         specifier: ^26.1.1
         version: 26.1.1
       mppx:
-        specifier: 0.8.12
-        version: 0.8.12(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3))
+        specifier: 0.8.13
+        version: 0.8.13(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3))
       tsx:
         specifier: ^4.23.1
         version: 4.23.1
@@ -913,8 +913,8 @@ packages:
     resolution: {integrity: sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA==}
     engines: {node: '>=8.6'}
 
-  mppx@0.8.12:
-    resolution: {integrity: sha512-aLtXfnOZ92E2aYsBNAo6StO7osQvBoSyzLc82pyrVKRn2VGhgVcMiqDIhSq0NWWhjrl8UQAjqU1Q8Qpt9WFSrw==}
+  mppx@0.8.13:
+    resolution: {integrity: sha512-8H01392Cn5tlwUG3wqxKe8qd/lxi2krAdw6MQzWWRMnhv/CDEJD3Ia1Qipy631NYQBWm3VE/pU6aQOYYjmcYbg==}
     hasBin: true
     peerDependencies:
       '@modelcontextprotocol/sdk': '>=1.25.0'
@@ -2039,7 +2039,7 @@ snapshots:
       braces: 3.0.3
       picomatch: 2.3.2
 
-  mppx@0.8.12(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3)):
+  mppx@0.8.13(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3)):
     dependencies:
       '@stripe/stripe-js': 9.9.0
       eventsource-parser: 3.1.0
