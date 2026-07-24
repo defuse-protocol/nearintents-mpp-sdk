@@ -56,6 +56,7 @@
     "demo:build": "pnpm -C demo/app install && pnpm -C demo/app build",
     "demo:server": "tsx --env-file-if-exists=.env demo/server/index.ts",
     "example:client": "tsx --env-file-if-exists=.env examples/client.ts",
+    "example:live-oneclick-smoke": "tsx --env-file-if-exists=.env examples/live-oneclick-smoke.ts",
     "example:server": "tsx --env-file-if-exists=.env examples/server.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
