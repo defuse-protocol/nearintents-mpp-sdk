@@ -4,8 +4,8 @@
  * This example is typechecked as part of the suite but is never executed in
  * CI: it contacts the live 1Click service and moves real funds, so it refuses
  * to run unless LIVE_ONE_CLICK=1. Quote creation and settlement are separate
- * invocations, so the payer can inspect the wet quote and broadcast from an
- * external wallet before polling it to a terminal result.
+ * invocations, so the payer can inspect the executable quote and broadcast
+ * from an external wallet before polling it to a terminal result.
  *
  * Run:  pnpm example:live-oneclick-smoke
  */
@@ -98,57 +98,57 @@ if (!depositAddress) {
   console.log(
     '\nInspect the quote, send exactly amountIn to depositAddress (with depositMemo when present), then rerun with LIVE_DEPOSIT_ADDRESS, LIVE_DEPOSIT_TX_HASH, and optional LIVE_DEPOSIT_MEMO.',
   )
-  process.exit(0)
+} else {
+  const txHash = required('LIVE_DEPOSIT_TX_HASH')
+  const depositMemo = process.env.LIVE_DEPOSIT_MEMO?.trim()
+  const expectedStatus = process.env.LIVE_EXPECT_STATUS?.trim() ?? 'SUCCESS'
+  const timeoutMs = positiveInteger('LIVE_POLL_TIMEOUT_MS', 15 * 60 * 1000)
+  const intervalMs = positiveInteger('LIVE_POLL_INTERVAL_MS', 2000)
+
+  // Notification is an accelerator only. A resumed smoke may already have been
+  // submitted, so status observation remains authoritative.
+  await OneClick.submitDeposit(config, {
+    txHash,
+    depositAddress,
+    ...(depositMemo && { memo: depositMemo }),
+  }).catch((error) => {
+    console.warn(
+      `Deposit notification failed; continuing with status observation: ${String(error)}`,
+    )
+  })
+
+  const status = await OneClick.pollToTerminal(config, {
+    depositAddress,
+    ...(depositMemo && { depositMemo }),
+    timeoutMs,
+    intervalMs,
+  })
+  const originHashMatched = OneClick.matchesOriginTx(status, txHash)
+  const destinationTxHash = OneClick.destinationTxHash(status)
+
+  console.log(
+    JSON.stringify(
+      {
+        phase: 'terminal',
+        depositAddress,
+        status: status.status,
+        originHashMatched,
+        originTxHash: txHash,
+        destinationTxHash,
+        depositedAmount: status.swapDetails?.depositedAmount ?? null,
+        refundedAmount: status.swapDetails?.refundedAmount ?? null,
+        refundReason: status.swapDetails?.refundReason ?? null,
+        updatedAt: status.updatedAt ?? null,
+      },
+      null,
+      2,
+    ),
+  )
+
+  if (status.status !== expectedStatus)
+    throw new Error(`Expected terminal status ${expectedStatus}, received ${status.status}.`)
+  if (status.status === 'SUCCESS' && !originHashMatched)
+    throw new Error('SUCCESS did not include LIVE_DEPOSIT_TX_HASH.')
+  if (status.status === 'SUCCESS' && !destinationTxHash)
+    throw new Error('SUCCESS did not include a destination settlement transaction hash.')
 }
-
-const txHash = required('LIVE_DEPOSIT_TX_HASH')
-const depositMemo = process.env.LIVE_DEPOSIT_MEMO?.trim()
-const expectedStatus = process.env.LIVE_EXPECT_STATUS?.trim() ?? 'SUCCESS'
-const timeoutMs = positiveInteger('LIVE_POLL_TIMEOUT_MS', 15 * 60 * 1000)
-const intervalMs = positiveInteger('LIVE_POLL_INTERVAL_MS', 2000)
-
-// Notification is an accelerator only. A resumed smoke may already have been
-// submitted, so status observation remains authoritative.
-await OneClick.submitDeposit(config, {
-  txHash,
-  depositAddress,
-  ...(depositMemo && { memo: depositMemo }),
-}).catch((error) => {
-  console.warn(`Deposit notification failed; continuing with status observation: ${String(error)}`)
-})
-
-const status = await OneClick.pollToTerminal(config, {
-  depositAddress,
-  ...(depositMemo && { depositMemo }),
-  timeoutMs,
-  intervalMs,
-})
-const observedOriginHash = OneClick.matchesOriginTx(status, txHash)
-const destinationTxHash =
-  OneClick.destinationTxHash(status) ?? status.swapDetails?.nearTxHashes?.[0] ?? null
-
-console.log(
-  JSON.stringify(
-    {
-      phase: 'terminal',
-      depositAddress,
-      status: status.status,
-      observedOriginHash,
-      originTxHash: txHash,
-      destinationTxHash,
-      depositedAmount: status.swapDetails?.depositedAmount ?? null,
-      refundedAmount: status.swapDetails?.refundedAmount ?? null,
-      refundReason: status.swapDetails?.refundReason ?? null,
-      updatedAt: status.updatedAt ?? null,
-    },
-    null,
-    2,
-  ),
-)
-
-if (!observedOriginHash)
-  throw new Error('The terminal 1Click result did not contain LIVE_DEPOSIT_TX_HASH.')
-if (status.status !== expectedStatus)
-  throw new Error(`Expected terminal status ${expectedStatus}, received ${status.status}.`)
-if (status.status === 'SUCCESS' && !destinationTxHash)
-  throw new Error('SUCCESS did not include a destination settlement transaction hash.')
