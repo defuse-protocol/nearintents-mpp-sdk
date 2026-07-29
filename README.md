@@ -109,6 +109,11 @@ Arbitrum account and run `pnpm example:client`, or send the deposit yourself
 and re-run with `DEPOSIT_TX_HASH=0x…`. The client refuses anything beyond its
 configured `policy.maxAmountIn` caps.
 
+For operator-only live 1Click smoke testing, `examples/live-oneclick-smoke.ts`
+can be run with `pnpm example:live-oneclick-smoke`. It refuses to contact the
+live provider unless `LIVE_ONE_CLICK=1`, prints deposit instructions in one
+invocation, then polls a separately funded deposit in a second invocation.
+
 ## Operational notes
 
 - **Refunds.** `methodDetails.refundTo` is a **merchant-configured** address
