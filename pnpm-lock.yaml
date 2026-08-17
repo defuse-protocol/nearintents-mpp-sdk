@@ -22,8 +22,8 @@ importers:
         specifier: ^26.1.1
         version: 26.1.1
       mppx:
-        specifier: 0.8.15
-        version: 0.8.15(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3))
+        specifier: 0.8.17
+        version: 0.8.17(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3))
       tsx:
         specifier: ^4.23.1
         version: 4.23.1
@@ -527,8 +527,8 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@stripe/stripe-js@9.9.0':
-    resolution: {integrity: sha512-Vwqe6Q5cU4i82tPyAv2BpaW/fQSNdOSO4/J8EeDLPp5/oIZiMmdB+Hgh863zFH+rtoxpuWGvD1L7QPh8k1Rdvw==}
+  '@stripe/stripe-js@9.12.1':
+    resolution: {integrity: sha512-KLXPvjA0BfS4dQnW+ddHjwtIXMnIfKYxqmeNMmQCfKjvYog0cSG+Z7ZvK4RH1+bV90GC07nUztWDRWmJLi5HZQ==}
     engines: {node: '>=12.16'}
 
   '@toon-format/toon@2.3.1':
@@ -615,6 +615,17 @@ packages:
 
   abitype@1.2.4:
     resolution: {integrity: sha512-dpKH+N27vRjarMVTFFkeY445VTKftzGWpL0FiT7xmVmzQRKazZexzC5uHG0f6XKsVLAuUlndnbGau6lRejClxg==}
+    peerDependencies:
+      typescript: '>=5.0.4'
+      zod: ^3.22.0 || ^4.0.0
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+      zod:
+        optional: true
+
+  abitype@1.3.0:
+    resolution: {integrity: sha512-fk6Te+bojIFrMvMZrnOO+SxCB+RUksTGOzq/60ZRvs1L+BVzvi2bqt9L3W/17ZLdZsyM1FuYf65P5nlmoiH1Bg==}
     peerDependencies:
       typescript: '>=5.0.4'
       zod: ^3.22.0 || ^4.0.0
@@ -777,8 +788,8 @@ packages:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
     engines: {node: '>= 4'}
 
-  incur@0.4.19:
-    resolution: {integrity: sha512-xSH6Y79oIeLwwiOp51MjXTyBzcNmP/gOQN+pCrjqG04UdAawZkKoqs6lpTto5c8ht1fGnGz8PADRJqdpf8mD2A==}
+  incur@0.4.26:
+    resolution: {integrity: sha512-63lwOc8+o1VeFkIW3sWWMrDSP5Dd1NsvucUWyxLUk+DoNRiNl7cj481nlLdlboXkq+tqYPBSlV/7XbylS2S4BA==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -913,8 +924,8 @@ packages:
     resolution: {integrity: sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA==}
     engines: {node: '>=8.6'}
 
-  mppx@0.8.15:
-    resolution: {integrity: sha512-+4jQRYB3AbgATfsZZAen7SxDC4miAPhUokTmBgda5OORZKvPnbWKAKHMHK1oMKsxWTVMYBwfgxmiJYAEe6I47g==}
+  mppx@0.8.17:
+    resolution: {integrity: sha512-6cfaqzsiMh947CqPJPnJBwUJv4yveRRIA52PrxEjNM/36Le7sOpKG9fh5PU9fmTEkfjf0O5vFPGo4tx6tlrRUw==}
     hasBin: true
     peerDependencies:
       '@modelcontextprotocol/sdk': '>=1.25.0'
@@ -1115,6 +1126,10 @@ packages:
     resolution: {integrity: sha512-vavAMRXOgBVNF6nyEEmL3DBK19iRpDcoIwW+swQ+CbGiu7lju6t+JklA1MHweoWtadgt4ISVUsXLyDq34ddcwA==}
     engines: {node: '>=4'}
 
+  structured-headers@2.0.3:
+    resolution: {integrity: sha512-4g5yxhlDMClRwCcfKfLeS7Z8yAVdOWGDADwm80Poh1iReU2KVKLGBlqwpHWJ2qovq0+ZIf1atAEO1eua2o9Rgg==}
+    engines: {node: '>=18', npm: '>=6'}
+
   term-size@2.2.1:
     resolution: {integrity: sha512-wK0Ri4fOGjv/XPy8SBHZChl8CM7uMc5VML7SqiQ0zG7+J5Vr+RMQDoHa2CNT6KHUnTGIXH34UDMkPzAUyapBZg==}
     engines: {node: '>=8'}
@@ -1138,8 +1153,8 @@ packages:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
 
-  tokenx@1.3.0:
-    resolution: {integrity: sha512-NLdXTEZkKiO0gZuLtMoZKjCXTREXeZZt8nnnNeyoXtNZAfG/GKGSbQtLU5STspc0rMSwcA+UJfWZkbNU01iKmQ==}
+  tokenx@1.6.0:
+    resolution: {integrity: sha512-CKTjk345ajvBAUp5xUI9a5KKN0zU0lBueVHQbCskH1Hp6WkUKsPW2qGCYNs0pxNyfzxfo+IIjdt2W4sMbw/qBw==}
 
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
@@ -1693,7 +1708,7 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@stripe/stripe-js@9.9.0': {}
+  '@stripe/stripe-js@9.12.1': {}
 
   '@toon-format/toon@2.3.1': {}
 
@@ -1777,6 +1792,11 @@ snapshots:
       zod: 4.4.3
 
   abitype@1.2.4(typescript@6.0.3)(zod@4.4.3):
+    optionalDependencies:
+      typescript: 6.0.3
+      zod: 4.4.3
+
+  abitype@1.3.0(typescript@6.0.3)(zod@4.4.3):
     optionalDependencies:
       typescript: 6.0.3
       zod: 4.4.3
@@ -1938,13 +1958,13 @@ snapshots:
 
   ignore@5.3.2: {}
 
-  incur@0.4.19:
+  incur@0.4.26:
     dependencies:
       '@cfworker/json-schema': 4.1.1
       '@modelcontextprotocol/server': 2.0.0-alpha.4
       '@scalar/openapi-types': 0.8.0
       '@toon-format/toon': 2.3.1
-      tokenx: 1.3.0
+      tokenx: 1.6.0
       yaml: 2.9.0
       zod: 4.4.3
 
@@ -2047,12 +2067,13 @@ snapshots:
       braces: 3.0.3
       picomatch: 2.3.2
 
-  mppx@0.8.15(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3)):
+  mppx@0.8.17(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3)):
     dependencies:
-      '@stripe/stripe-js': 9.9.0
+      '@stripe/stripe-js': 9.12.1
       eventsource-parser: 3.1.0
-      incur: 0.4.19
+      incur: 0.4.26
       ox: 0.14.33(typescript@6.0.3)(zod@4.4.3)
+      structured-headers: 2.0.3
       viem: 2.55.4(typescript@6.0.3)(zod@4.4.3)
       zod: 4.4.3
     transitivePeerDependencies:
@@ -2089,7 +2110,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.4(typescript@6.0.3)(zod@4.4.3)
+      abitype: 1.3.0(typescript@6.0.3)(zod@4.4.3)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 6.0.3
@@ -2224,6 +2245,8 @@ snapshots:
 
   strip-bom@3.0.0: {}
 
+  structured-headers@2.0.3: {}
+
   term-size@2.2.1: {}
 
   tinybench@2.9.0: {}
@@ -2241,7 +2264,7 @@ snapshots:
     dependencies:
       is-number: 7.0.0
 
-  tokenx@1.3.0: {}
+  tokenx@1.6.0: {}
 
   tslib@2.8.1:
     optional: true
