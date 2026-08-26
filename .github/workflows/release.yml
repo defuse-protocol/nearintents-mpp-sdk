@@ -12,19 +12,28 @@ permissions:
   pull-requests: write # open/update the "Version Packages" PR
   id-token: write # npm Trusted Publishing (OIDC) + provenance
 
-# While unreleased changesets exist on main, this maintains a "Version
-# Packages" PR (version bump + CHANGELOG). Merging that PR re-triggers the
-# workflow with no pending changesets, which runs `pnpm release` and publishes
-# to npm via TRUSTED PUBLISHING: no npm token anywhere — npm exchanges this
-# job's GitHub OIDC identity (org/repo/workflow/environment must match the
-# trusted publisher configured on npmjs.com for the package) for a short-lived
-# credential, and generates provenance automatically.
+# First-party release train — no third-party actions (org Actions policy
+# allows GitHub-owned actions only; changesets/action was removed 2026-08-24
+# after the policy rejected it at workflow startup).
+#
+# 1. While unreleased changesets exist on main, this job (re)builds the
+#    `changeset-release/main` branch with `changeset version` and opens or
+#    updates the "Version Packages" PR.
+# 2. Merging that PR re-triggers the workflow with no pending changesets,
+#    which runs `pnpm release` and publishes to npm via TRUSTED PUBLISHING:
+#    no npm token anywhere — npm exchanges this job's GitHub OIDC identity
+#    (org/repo/workflow/environment must match the trusted publisher
+#    configured on npmjs.com for the package) for a short-lived credential,
+#    and generates provenance automatically.
+#
 # Org policy: every action pinned to a full-length commit SHA (`# vN`
 # comments are what Dependabot updates).
 jobs:
   release:
     runs-on: ubuntu-latest
     environment: npm-publish
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -37,15 +46,54 @@ jobs:
       # Trusted publishing requires a recent npm (OIDC credential exchange).
       - run: npm install -g npm@latest
       - run: pnpm install --frozen-lockfile
-      # changesets/action expects npm auth to exist; with trusted publishing
-      # there is none. A bare user .npmrc satisfies its presence check without
-      # injecting any credential (npm then falls through to OIDC).
-      - run: |
+
+      - name: Detect pending changesets
+        id: mode
+        run: |
+          count="$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')"
+          echo "changesets=$count" >> "$GITHUB_OUTPUT"
+          echo "Pending changesets: $count"
+
+      # Phase 1 — pending changesets: (re)build the Version Packages PR.
+      - name: Update the Version Packages PR
+        if: steps.mode.outputs.changesets != '0'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C changeset-release/main
+          pnpm exec changeset version
+          git add -A
+          git commit -m "chore: version package"
+          git push --force origin changeset-release/main
+          # PR creation needs the "allow GitHub Actions to create PRs"
+          # setting; if the org forbids it, the branch is still pushed —
+          # the warning below links the manual compare page.
+          if ! gh pr view changeset-release/main --json number >/dev/null 2>&1; then
+            gh pr create \
+              --base main \
+              --head changeset-release/main \
+              --title 'chore: version package' \
+              --body 'Automated release PR: applies pending changesets (version bump + CHANGELOG). Merging it publishes to npm via trusted publishing.' \
+              || echo "::warning::Could not open the PR automatically — open it manually: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...changeset-release/main"
+          fi
+
+      # Phase 2 — no pending changesets: publish if this version is new.
+      - name: Publish to npm (trusted publishing)
+        if: steps.mode.outputs.changesets == '0'
+        run: |
+          set -euo pipefail
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$(npm view "$name" version 2>/dev/null || true)" = "$version" ]; then
+            echo "$name@$version is already published — nothing to do."
+            exit 0
+          fi
+          # npm auth presence shim: no credential — npm falls through to OIDC.
           [ -f "$HOME/.npmrc" ] || echo "registry=https://registry.npmjs.org/" > "$HOME/.npmrc"
-      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
-        with:
-          publish: pnpm release
-          title: 'chore: version package'
-          commit: 'chore: version package'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          pnpm release
+          tag="$name@$version"
+          git push origin "refs/tags/$tag" \
+            || echo "::warning::Publish succeeded but pushing tag $tag failed."
+          gh release create "$tag" --title "$tag" --notes "See CHANGELOG.md for details." \
+            || echo "::warning::Publish succeeded but creating the GitHub release failed."
