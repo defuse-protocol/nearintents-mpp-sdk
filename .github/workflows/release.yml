@@ -69,7 +69,8 @@ jobs:
           # PR creation needs the "allow GitHub Actions to create PRs"
           # setting; if the org forbids it, the branch is still pushed —
           # the warning below links the manual compare page.
-          if ! gh pr view changeset-release/main --json number >/dev/null 2>&1; then
+          open_prs="$(gh pr list --head changeset-release/main --state open --json number --jq length)"
+          if [ "$open_prs" = "0" ]; then
             gh pr create \
               --base main \
               --head changeset-release/main \
