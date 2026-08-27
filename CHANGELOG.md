@@ -1,5 +1,12 @@
 # @defuse-protocol/nearintents-mpp-sdk
 
+## 0.1.3
+
+### Patch Changes
+
+- 1dd8540: Adopt mppx 0.8.19: bump the exact dev and peer dependency pin from 0.8.15 so
+  fresh installs alongside the latest mppx resolve without a peer conflict.
+
 ## 0.1.2
 
 ### Patch Changes
