@@ -111,6 +111,14 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
   `release.yml` workflow, and the `npm-publish` GitHub environment). The
   defuse-protocol org requires every workflow action pinned to a full-length
   commit SHA.
+- **Org hardening (post-incident, 2026-08):** the org Actions policy allows
+  GitHub-owned actions only — `release.yml` is first-party-only
+  (changesets/action removed 2026-08-24; the version-PR / publish train is
+  scripted inline, keep the filename and `npm-publish` environment or the npm
+  trusted-publisher binding breaks). An org ruleset also enforces four-eyes on
+  every PR to main (`require_last_push_approval` — no solo bypass, ask a
+  colleague to approve); the bot-authored "Version Packages" PR is the
+  exception the maintainer can approve alone, since the bot is the pusher.
 
 ## Definition of done (v1)
 
