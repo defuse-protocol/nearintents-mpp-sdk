@@ -82,12 +82,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.4",
-    "@changesets/cli": "^2.31.1",
+    "@changesets/cli": "^3.0.1",
     "@types/node": "^26.1.1",
     "mppx": "0.8.19",
     "tsx": "^4.23.1",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "viem": "^2.55.4",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.0"
   }
 }
