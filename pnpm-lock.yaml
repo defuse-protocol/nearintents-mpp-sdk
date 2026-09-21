@@ -22,8 +22,8 @@ importers:
         specifier: ^26.1.1
         version: 26.1.1
       mppx:
-        specifier: 0.8.19
-        version: 0.8.19(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3))
+        specifier: 0.10.1
+        version: 0.10.1(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3))
       tsx:
         specifier: ^4.23.1
         version: 4.23.1
@@ -894,23 +894,41 @@ packages:
     resolution: {integrity: sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA==}
     engines: {node: '>=8.6'}
 
-  mppx@0.8.19:
-    resolution: {integrity: sha512-Rt4aq67bfeOGjK3/jt0oVPZGwULg8fb8yUlTjjb+tfMltjRXuUE7JfQ2AutmI6bhZG3TtXJmI4BK2AxxjC0Ntw==}
+  mppx@0.10.1:
+    resolution: {integrity: sha512-MTpZqCMK7rQTz6uMONeigTesTb57b7dtdLhE1+cDfvc1rVPS4pCOvh7ocA1MF0692T0/GCVP10yafW5Ai8++Aw==}
     hasBin: true
     peerDependencies:
       '@modelcontextprotocol/sdk': '>=1.25.0'
+      '@x402/core': '>=2.22.0'
+      '@x402/express': '>=2.22.0'
+      '@x402/hono': '>=2.22.0'
+      '@x402/mcp': '>=2.22.0'
+      '@x402/next': '>=2.22.0'
       elysia: '>=1'
       express: '>=5'
       hono: '>=4.12.25'
+      next: '>=16.2.6'
       viem: '>=2.54.0'
     peerDependenciesMeta:
       '@modelcontextprotocol/sdk':
+        optional: true
+      '@x402/core':
+        optional: true
+      '@x402/express':
+        optional: true
+      '@x402/hono':
+        optional: true
+      '@x402/mcp':
+        optional: true
+      '@x402/next':
         optional: true
       elysia:
         optional: true
       express:
         optional: true
       hono:
+        optional: true
+      next:
         optional: true
 
   mri@1.2.0:
@@ -2009,7 +2027,7 @@ snapshots:
       braces: 3.0.3
       picomatch: 2.3.2
 
-  mppx@0.8.19(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3)):
+  mppx@0.10.1(typescript@6.0.3)(viem@2.55.4(typescript@6.0.3)(zod@4.4.3)):
     dependencies:
       '@stripe/stripe-js': 9.13.0
       eventsource-parser: 3.1.1
