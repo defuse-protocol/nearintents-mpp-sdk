@@ -6,7 +6,7 @@ import * as Types from '../src/Types.js'
 import * as vectors from './vectors.js'
 
 /**
- * Spec-conformance wire vectors (docs/spec/draft-nearintents-charge-00.md).
+ * Spec-conformance wire vectors (docs/spec/draft-nearintents-charge-01.md).
  * Everything is generated and re-parsed through mppx primitives — the same
  * code paths production challenges/credentials/receipts take.
  */

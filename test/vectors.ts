@@ -7,7 +7,7 @@ import type * as Types from '../src/Types.js'
  * Spec-conformance wire vectors, generated THROUGH mppx primitives
  * (Challenge.fromMethod / Credential.serialize / Receipt.from) — never
  * hand-encoded. Request payloads are verbatim from the spec's Examples
- * appendix (docs/spec/draft-nearintents-charge-00.md).
+ * appendix (docs/spec/draft-nearintents-charge-01.md).
  */
 
 export const secretKey = 'vector-secret-key'

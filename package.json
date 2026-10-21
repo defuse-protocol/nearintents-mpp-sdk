@@ -29,12 +29,10 @@
   ],
   "files": [
     "dist",
-    "scripts/live-oneclick-smoke.ts",
     "src",
     "!src/**/*.test.ts"
   ],
   "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -69,10 +67,6 @@
   "packageManager": "pnpm@11.10.0",
   "engines": {
     "node": ">=20"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
   },
   "dependencies": {
     "zod": "^4.4.3"

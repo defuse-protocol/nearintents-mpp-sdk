@@ -11,7 +11,7 @@ as a `{type:"hash"}` credential; the server verifies the deposit and drives the
 swap to `SUCCESS` (`EXACT_OUTPUT` — the merchant receives an exact amount of
 its chosen asset on its chosen chain).
 
-**Normative wire contract:** `docs/spec/draft-nearintents-charge-00.md`
+**Normative wire contract:** `docs/spec/draft-nearintents-charge-01.md`
 (registered in `tempoxyz/mpp-specs` as `specs/methods/nearintents/`). Tests
 cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
 
@@ -116,7 +116,7 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
 
 - Docker is unavailable; tests are **mock-only** (in-process mock 1Click).
   Never call live 1Click from CI or the test suite. The separate
-  `pnpm smoke:live` manual harness requires `LIVE_ONE_CLICK=1` and is never a
+  `pnpm example:live-oneclick-smoke` harness requires `LIVE_ONE_CLICK=1` and is never a
   CI dependency.
 - ESM-only, Biome (single quotes, no semicolons), vitest, changesets.
 - Published as **`@defuse-protocol/nearintents-mpp-sdk`** with npm provenance.

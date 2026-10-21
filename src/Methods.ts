@@ -10,7 +10,7 @@ import * as Types from './Types.js'
  * merchant's destination leg in `methodDetails`. The credential payload is
  * the client's confirmed origin-chain deposit transaction hash (push mode).
  *
- * Spec: docs/spec/draft-nearintents-charge-00.md
+ * Spec: docs/spec/draft-nearintents-charge-01.md
  */
 export const charge = Method.from({
   name: Types.paymentMethod,

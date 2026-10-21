@@ -4,7 +4,7 @@ Reference implementation of the **`nearintents` payment method** for
 [MPP (Machine Payments Protocol)](https://mpp.dev) enabling cross-chain HTTP 402
 payments settled by [NEAR Intents](https://near-intents.org): clients pay on
 any supported chain, merchants receive an exact amount on theirs. Extends
-[`mppx`](https://github.com/wevm/mppx). The original spec this implementation is based on is found at [Tempo's MPP specs repository](https://github.com/tempoxyz/mpp-specs/blob/main/specs/methods/nearintents/draft-nearintents-charge-00.md).
+[`mppx`](https://github.com/wevm/mppx). The original spec this implementation is based on is found at [Tempo's MPP specs repository](https://github.com/tempoxyz/mpp-specs/blob/main/specs/methods/nearintents/draft-nearintents-charge-01.md).
 
 ## Usage
 
@@ -223,7 +223,7 @@ also own replay protection.
 ## Spec
 
 The normative wire contract is
-[`docs/spec/draft-nearintents-charge-00.md`](docs/spec/draft-nearintents-charge-00.md)
+[`docs/spec/draft-nearintents-charge-01.md`](docs/spec/draft-nearintents-charge-01.md)
 (registered in
 [`tempoxyz/mpp-specs`](https://github.com/tempoxyz/mpp-specs) under
 `specs/methods/nearintents/`). Conformance vectors in
@@ -235,7 +235,6 @@ primitives from the spec's examples.
 ```sh
 npx pnpm@11 install   # pnpm pinned via packageManager
 pnpm check            # typecheck + lint + tests
-pnpm release:check    # full checks, build, and package-content dry run
 ```
 
 Tests are **mock-only** (in-process mock 1Click server in

@@ -71,7 +71,7 @@ export function charge(parameters: charge.Parameters) {
   const destinationNetwork = Types.chainOf(destinationAsset)
 
   if (typeof refundToOption === 'string' && !refundToOption.trim())
-    throw new Error('mpp-nearintents: refundTo must not be empty.')
+    throw new Error('nearintents-mpp-sdk: refundTo must not be empty.')
 
   const expiresWindowMs = (parameters.expiresWindow ?? 300) * 1000
   const quoteDeadlineBufferMs = (parameters.quoteDeadlineBuffer ?? 900) * 1000
@@ -83,12 +83,12 @@ export function charge(parameters: charge.Parameters) {
   if (parameters.settlementTimeout !== undefined)
     assertPositiveFinite('settlementTimeout', parameters.settlementTimeout)
   if (!Number.isInteger(slippageTolerance) || slippageTolerance < 0 || slippageTolerance > 10_000)
-    throw new Error('mpp-nearintents: slippageTolerance must be an integer from 0 to 10000.')
+    throw new Error('nearintents-mpp-sdk: slippageTolerance must be an integer from 0 to 10000.')
 
   const backingStore = parameters.store ?? Store.memory()
   if (typeof backingStore.update !== 'function')
     throw new Error(
-      'mpp-nearintents: charge() requires an atomic store with update() for replay protection.',
+      'nearintents-mpp-sdk: charge() requires an atomic store with update() for replay protection.',
     )
   const store = Store.from(backingStore as Store.AtomicStore<charge.StoreItemMap>, {
     keyPrefix: parameters.storeKeyPrefix ?? '',
@@ -145,7 +145,7 @@ export function charge(parameters: charge.Parameters) {
         : refundToOption
     if (!value?.trim())
       throw new Error(
-        'mpp-nearintents: refundTo resolver returned no address; the server must know the payer refund address before minting a wet quote.',
+        'nearintents-mpp-sdk: refundTo resolver returned no address; the server must know the payer refund address before minting an executable quote.',
       )
     return value
   }
@@ -521,12 +521,12 @@ export function charge(parameters: charge.Parameters) {
 
 function assertPositiveFinite(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0)
-    throw new Error(`mpp-nearintents: ${name} must be a positive finite number.`)
+    throw new Error(`nearintents-mpp-sdk: ${name} must be a positive finite number.`)
 }
 
 function assertNonNegativeFinite(name: string, value: number): void {
   if (!Number.isFinite(value) || value < 0)
-    throw new Error(`mpp-nearintents: ${name} must be a non-negative finite number.`)
+    throw new Error(`nearintents-mpp-sdk: ${name} must be a non-negative finite number.`)
 }
 
 export declare namespace charge {
