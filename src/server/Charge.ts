@@ -254,6 +254,11 @@ export function charge(parameters: charge.Parameters) {
       if (!current) return { op: 'noop', result: undefined }
       return { op: 'set', value: { ...current, state: 'settled' }, result: undefined }
     })
+    await dropQuotePointer(depositAddress, identity)
+  }
+
+  /** Drops the cache pointer only, so the next 402 mints fresh while the deposit stays presentable. */
+  async function dropQuotePointer(depositAddress: string, identity: string): Promise<void> {
     await store.update(quoteKey(identity), (current) => {
       if (current?.depositAddress !== depositAddress) return { op: 'noop', result: undefined }
       return { op: 'delete', result: undefined }
@@ -428,12 +433,16 @@ export function charge(parameters: charge.Parameters) {
         // retire the quote or consume an unrelated hash: the real payer must
         // still be able to present the observed transaction after a bad-hash
         // race. Hex hashes are canonicalized by matchesOriginTx; base58 and
-        // other formats remain case-sensitive.
-        if (!OneClick.matchesOriginTx(status, hash, resolved.methodDetails.originNetwork))
+        // other formats remain case-sensitive. The backend has still reached
+        // a terminal state for this deposit address, so drop the cache
+        // pointer: a later challenge must not hand a new payer this address.
+        if (!OneClick.matchesOriginTx(status, hash, resolved.methodDetails.originNetwork)) {
+          await dropQuotePointer(recipient, deposit.identity)
           throw new Errors.VerificationFailedError({
             reason:
               'the presented transaction hash is not among the deposits observed for this address',
           })
+        }
 
         // Observability: report the terminal state (retirement is handled per
         // outcome below, not here — a bad-hash race must not spend the quote).

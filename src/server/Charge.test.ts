@@ -402,6 +402,27 @@ describe('deposit confirmation (spec §Verification step 3)', () => {
     // being retired by the unrelated credential.
     expect((await pay(handler, challenge, observedHash)).status).toBe(200)
   })
+
+  test('a wrong-hash race takes the terminal quote out of the cache for new payers', async () => {
+    const { handler } = await setup()
+    const observedHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
+    mock.script({
+      originTxHashes: [observedHash],
+    })
+    const challenge = await get402(handler)
+    const recipient = (challenge.request as Types.ChargeRequest).recipient
+
+    const { body } = await problemOf(await pay(handler, challenge, HASH))
+    expect(body.type).toBe('https://paymentauth.org/problems/verification-failed')
+
+    // The backend already reached a terminal state for this deposit address,
+    // so a new payer must not be handed it from the quote cache.
+    const fresh = await get402(handler)
+    expect((fresh.request as Types.ChargeRequest).recipient).not.toBe(recipient)
+
+    // The real payer can still present the observed transaction.
+    expect((await pay(handler, challenge, observedHash)).status).toBe(200)
+  })
 })
 
 describe('expired challenges', () => {
