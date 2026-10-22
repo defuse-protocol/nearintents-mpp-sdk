@@ -24,6 +24,8 @@ jobs:
       - run: pnpm lint
       # Mock-only test suite — must never call live 1Click.
       - run: pnpm test
+      # Declaration emit catches errors `check:types` (--noEmit) cannot.
+      - run: pnpm build
 
   # Early warning for mppx pre-1.0 churn: run the suite against mppx@latest.
   # Allowed to fail — breakage here means "prepare a compat release", not "block CI".
