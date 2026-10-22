@@ -1,6 +1,6 @@
 import { Challenge, Receipt, Store } from 'mppx'
 import { Mppx } from 'mppx/server'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { createOneClickMock, type OneClickMock } from '../../test/OneClickMock.js'
 import { charge as clientCharge } from '../client/Charge.js'
@@ -232,6 +232,9 @@ describe('production configuration guardrails', () => {
   test('fails fast on unsafe timeout, polling, and slippage values', () => {
     expect(() => create({ settlementTimeout: 0 })).toThrow(/settlementTimeout/)
     expect(() => create({ pollInterval: -1 })).toThrow(/pollInterval/)
+    expect(() => create({ oneClick: { requestTimeoutMs: 0 } })).toThrow(
+      /oneClick\.requestTimeoutMs/,
+    )
     expect(() => create({ slippageTolerance: 10_001 })).toThrow(/slippageTolerance/)
   })
 })
@@ -295,8 +298,13 @@ describe('replay protection', () => {
     expect(body.type).toBe('https://paymentauth.org/problems/verification-failed')
   })
 
-  test('case-sensitive chain-native hashes do not collide in the replay store', async () => {
-    const { handler } = await setup()
+  test('case-sensitive NEAR hashes do not collide in the replay store', async () => {
+    const { handler } = await setup({
+      originAsset: NEAR_USDC,
+      destinationAsset: ARB_USDC,
+      destinationRecipient: '0x2527D02599Ba641c19FEa793cD0F9a6e8457C317',
+      refundTo: 'merchant.near',
+    })
     const first = await get402(handler)
     expect((await pay(handler, first, 'AbCDefghijk123456789')).status).toBe(200)
 
@@ -387,6 +395,20 @@ describe('backend unavailability and settlement timeout (5xx, never verification
 })
 
 describe('deposit confirmation (spec §Verification step 3)', () => {
+  test('a wrong hash on a non-success terminal is not consumed and does not retire the quote', async () => {
+    const { handler, store } = await setup()
+    const observedHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
+    mock.script({ outcome: 'REFUNDED', originTxHashes: [observedHash] })
+    const challenge = await get402(handler)
+
+    const wrong = await problemOf(await pay(handler, challenge, HASH))
+    expect(wrong.body.type).toBe('https://paymentauth.org/problems/verification-failed')
+    expect(await store.get(`nearintents-mpp-sdk:hash:eip155:42161:${HASH.slice(2)}`)).toBeNull()
+
+    const real = await problemOf(await pay(handler, challenge, observedHash))
+    expect(real.body.type).toBe('https://paymentauth.org/problems/settlement-failed')
+  })
+
   test('a wrong-hash race does not retire the quote or strand the observed payer hash', async () => {
     const { handler } = await setup()
     const observedHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
@@ -422,6 +444,30 @@ describe('deposit confirmation (spec §Verification step 3)', () => {
 
     // The real payer can still present the observed transaction.
     expect((await pay(handler, challenge, observedHash)).status).toBe(200)
+  })
+
+  test('SUCCESS without an indexed settlement reference can be retried', async () => {
+    const { handler, store } = await setup()
+    mock.script({ omitSettlementReferences: true })
+    const challenge = await get402(handler)
+    const recipient = (challenge.request as Types.ChargeRequest).recipient
+    const authorization = await credentialFor(challenge, HASH)
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const missing = await handler(new Request(URL_, { headers: { authorization } }))
+    consoleError.mockRestore()
+    expect(missing.status).toBe(402)
+    if (missing.status !== 402) throw new Error('unreachable')
+    expect(missing.challenge.status).toBe(500)
+    expect(await store.get(`nearintents-mpp-sdk:hash:eip155:42161:${HASH.slice(2)}`)).toBeNull()
+    const deposit = (await store.get(`nearintents-mpp-sdk:deposit:${recipient}`)) as {
+      state?: string
+    } | null
+    expect(deposit?.state).toBe('active')
+
+    mock.setSettlementReference(recipient, 'indexed-destination-hash')
+    const retry = await handler(new Request(URL_, { headers: { authorization } }))
+    expect(retry.status).toBe(200)
   })
 })
 

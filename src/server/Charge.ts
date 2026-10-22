@@ -80,6 +80,8 @@ export function charge(parameters: charge.Parameters) {
   assertPositiveFinite('expiresWindow', expiresWindowMs)
   assertPositiveFinite('quoteDeadlineBuffer', quoteDeadlineBufferMs)
   assertNonNegativeFinite('pollInterval', pollIntervalMs)
+  if (oneClick.requestTimeoutMs !== undefined)
+    assertPositiveFinite('oneClick.requestTimeoutMs', oneClick.requestTimeoutMs)
   if (parameters.settlementTimeout !== undefined)
     assertPositiveFinite('settlementTimeout', parameters.settlementTimeout)
   if (!Number.isInteger(slippageTolerance) || slippageTolerance < 0 || slippageTolerance > 10_000)
@@ -389,11 +391,7 @@ export function charge(parameters: charge.Parameters) {
       // atomically; consume permanently only on a terminal settlement state.
       // The lease covers the settlement budget so a crashed settlement never
       // strands a legitimate retry.
-      const claim = await claimHash(
-        resolved.methodDetails.originNetwork,
-        hash,
-        Date.now() + settlementTimeoutMs + 60_000,
-      )
+      const claim = await claimHash(originNetwork, hash, Date.now() + settlementTimeoutMs + 60_000)
       if (claim === 'consumed')
         throw new Errors.VerificationFailedError({
           reason: 'transaction hash has already been used',
@@ -436,7 +434,7 @@ export function charge(parameters: charge.Parameters) {
         // other formats remain case-sensitive. The backend has still reached
         // a terminal state for this deposit address, so drop the cache
         // pointer: a later challenge must not hand a new payer this address.
-        if (!OneClick.matchesOriginTx(status, hash, resolved.methodDetails.originNetwork)) {
+        if (!OneClick.matchesOriginTx(status, hash, originNetwork)) {
           await dropQuotePointer(recipient, deposit.identity)
           throw new Errors.VerificationFailedError({
             reason:
@@ -520,7 +518,7 @@ export function charge(parameters: charge.Parameters) {
         }
         throw error
       } finally {
-        const key = hashKey(resolved.methodDetails.originNetwork, hash)
+        const key = hashKey(originNetwork, hash)
         if (hashOutcome === 'consume') await store.put(key, { state: 'consumed' })
         else await store.delete(key)
       }

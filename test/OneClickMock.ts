@@ -59,6 +59,8 @@ export type QuoteScript = {
   /** Overrides the whole status sequence (each GET /v0/status consumes one, sticking on the last). */
   statuses?: SwapStatus[]
   destinationTxHash?: string
+  /** SUCCESS temporarily has no destination or NEAR settlement reference. */
+  omitSettlementReferences?: boolean
   /** Overrides the origin-chain tx hashes reported by /v0/status (defaults to the submitted hashes). */
   originTxHashes?: string[]
   refundReason?: string
@@ -93,6 +95,8 @@ export type OneClickMock = {
   script(script: QuoteScript): void
   /** Replaces the remaining status sequence for a deposit address. */
   setStatuses(depositAddress: string, statuses: SwapStatus[]): void
+  /** Makes a SUCCESS settlement reference visible after an indexing delay. */
+  setSettlementReference(depositAddress: string, hash: string): void
   /** Returns 500 for the next `n` requests (any endpoint). */
   failNextRequests(n: number): void
   /** All requests received, for wire-level assertions. */
@@ -130,10 +134,12 @@ export async function createOneClickMock(
         ...base.swapDetails,
         amountIn: (state.quote.minAmountIn as string) ?? undefined,
         amountOut: (state.quoteRequest.amount as string) ?? undefined,
-        nearTxHashes: [`mock-near-${state.depositAddress}`],
-        destinationChainTxHashes: [
-          { hash: state.script.destinationTxHash ?? `mock-dest-${state.depositAddress}` },
-        ],
+        ...(!state.script.omitSettlementReferences && {
+          nearTxHashes: [`mock-near-${state.depositAddress}`],
+          destinationChainTxHashes: [
+            { hash: state.script.destinationTxHash ?? `mock-dest-${state.depositAddress}` },
+          ],
+        }),
       }
     }
     if (status === 'REFUNDED' || status === 'FAILED') {
@@ -275,6 +281,12 @@ export async function createOneClickMock(
       const state = quotes.get(depositAddress)
       if (!state) throw new Error(`No mock quote for deposit address "${depositAddress}".`)
       state.sequence = [...statuses]
+    },
+    setSettlementReference: (depositAddress, hash) => {
+      const state = quotes.get(depositAddress)
+      if (!state) throw new Error(`No mock quote for deposit address "${depositAddress}".`)
+      state.script.omitSettlementReferences = false
+      state.script.destinationTxHash = hash
     },
     failNextRequests: (n) => {
       failCount = n

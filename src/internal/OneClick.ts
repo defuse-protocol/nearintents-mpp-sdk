@@ -185,7 +185,6 @@ async function request<result>(
     searchParams?: Record<string, string>
     /** Optional caller deadline for this request; capped by Config.requestTimeoutMs. */
     timeoutMs?: number | undefined
-    signal?: AbortSignal | undefined
   },
 ): Promise<result> {
   const baseUrl = config.baseUrl ?? defaultBaseUrl
@@ -216,12 +215,9 @@ async function request<result>(
         ...(config.jwt && { authorization: `Bearer ${config.jwt}` }),
       },
       ...(init.body !== undefined && { body: JSON.stringify(init.body) }),
-      signal: init.signal ? combineAbortSignals(init.signal, timeoutSignal) : timeoutSignal,
+      signal: timeoutSignal,
     })
   } catch (error) {
-    // Preserve an explicit caller abort (for example an HTTP disconnect)
-    // instead of misclassifying it as backend unavailability.
-    init.signal?.throwIfAborted()
     throw new OneClickUnavailableError(`1Click request failed: ${init.method} ${path}`, {
       cause: error,
     })
@@ -241,27 +237,6 @@ async function request<result>(
     )
 
   return body as result
-}
-
-function combineAbortSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
-  const controller = new AbortController()
-  const cleanup = () => {
-    a.removeEventListener('abort', onA)
-    b.removeEventListener('abort', onB)
-  }
-  const abortFrom = (signal: AbortSignal) => {
-    cleanup()
-    controller.abort(signal.reason)
-  }
-  const onA = () => abortFrom(a)
-  const onB = () => abortFrom(b)
-  if (a.aborted) abortFrom(a)
-  else if (b.aborted) abortFrom(b)
-  else {
-    a.addEventListener('abort', onA, { once: true })
-    b.addEventListener('abort', onB, { once: true })
-  }
-  return controller.signal
 }
 
 function detailOf(body: unknown): string {
@@ -408,10 +383,9 @@ export async function getStatus(
     depositMemo?: string | undefined
     /** Per-call cap used by pollToTerminal to enforce its total budget. */
     timeoutMs?: number | undefined
-    signal?: AbortSignal | undefined
   },
 ): Promise<StatusResult> {
-  const { depositAddress, depositMemo, signal, timeoutMs } = parameters
+  const { depositAddress, depositMemo, timeoutMs } = parameters
   return request<StatusResult>(config, '/v0/status', {
     method: 'GET',
     searchParams: {
@@ -419,7 +393,6 @@ export async function getStatus(
       ...(depositMemo !== undefined && { depositMemo }),
     },
     ...(timeoutMs !== undefined && { timeoutMs }),
-    ...(signal !== undefined && { signal }),
   })
 }
 
@@ -467,7 +440,6 @@ export async function pollToTerminal(
         depositAddress,
         depositMemo,
         timeoutMs: remainingMs,
-        signal,
       })
       if (result.status !== lastStatus) onStatus?.(result.status)
       lastStatus = result.status

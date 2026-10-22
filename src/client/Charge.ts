@@ -67,9 +67,9 @@ export function charge(parameters: charge.Parameters = {}) {
       const request = Types.ChargeRequestSchema.parse(challenge.request)
       // Spec §Expiry: MUST NOT broadcast a deposit after `expires`.
       Expires.assert(challenge.expires, challenge.id)
+      assertPolicy(parameters.policy, request)
 
       const walletClient = context?.walletClient ?? parameters.walletClient
-      assertPolicy(parameters.policy, request)
       const hash = await (async () => {
         if (context?.hash) return context.hash
         if (parameters.sendDeposit) return parameters.sendDeposit({ challenge, request })
@@ -124,9 +124,9 @@ export declare namespace charge {
         }
       | undefined
     /**
-     * Expected origin-chain refund address. Set this for bring-your-own
-     * broadcast paths so the client refuses a quote that would refund a
-     * merchant or third party.
+     * Expected origin-chain refund address. When set, the client refuses a
+     * challenge whose `methodDetails.refundTo` differs. When unset, the client
+     * accepts the merchant's refund address and its disclosed refund policy.
      */
     expectedRefundTo?: string | undefined
   }
