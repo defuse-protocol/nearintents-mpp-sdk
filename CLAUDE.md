@@ -11,7 +11,7 @@ as a `{type:"hash"}` credential; the server verifies the deposit and drives the
 swap to `SUCCESS` (`EXACT_OUTPUT` — the merchant receives an exact amount of
 its chosen asset on its chosen chain).
 
-**Normative wire contract:** `docs/spec/draft-nearintents-charge-00.md`
+**Normative wire contract:** `docs/spec/draft-nearintents-charge-01.md`
 (registered in `tempoxyz/mpp-specs` as `specs/methods/nearintents/`). Tests
 cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
 
@@ -71,13 +71,27 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
    challenge (the cache pointer is dropped on terminal) — one extra round trip;
    spec-recoverable and covered by the e2e suite. An upstream mppx hook to
    re-resolve the retry challenge post-verify would remove it.
+9. **Refund ownership is resolved before the wet quote:** `refundTo` accepts a
+   fixed address or a per-request resolver. Prefer authenticated payer context;
+   the resolved address is included in quote identity + `stableBinding`, and
+   clients pin it with `policy.expectedRefundTo`. A raw header is only a
+   transport hint—validate, authenticate,
+   and rate-limit it. Fixed merchant addresses require off-band recovery terms.
+10. **Hash canonicalization is chain-aware:** transaction identifiers compare
+    according to the origin chain's canonical encoding. Known hexadecimal
+    namespaces compare case-insensitively without an optional `0x` prefix;
+    base58/base64 and other chain-native formats remain case-sensitive. Never
+    lowercase all store keys.
+    A terminal status retires a quote only after the presented hash matches the
+    backend-observed origin transaction.
 
 ## 1Click essentials
 
 - Base `https://1click.chaindefuser.com`; JWT via `Authorization: Bearer`
   (env `ONE_CLICK_JWT`, server-side only — **never in any challenge field**;
   unauthenticated costs 0.2%).
-- `POST /v0/quote` with `dry: false`, `swapType: EXACT_OUTPUT` → unique
+- `POST /v0/quote` with `dry: false`, `swapType: EXACT_OUTPUT`, and either a
+  fixed or payer-resolved origin-chain `refundTo` → unique
   single-use `depositAddress`, `amountIn` (= challenge `amount`),
   `minAmountIn`, `deadline`, `timeEstimate`, `depositMemo?`. Every quote the
   server method mints carries `referral: "mpp"` (distribution-channel
@@ -101,7 +115,9 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
 ## Guardrails
 
 - Docker is unavailable; tests are **mock-only** (in-process mock 1Click).
-  Never call live 1Click from CI or the test suite.
+  Never call live 1Click from CI or the test suite. The separate
+  `pnpm example:live-oneclick-smoke` harness requires `LIVE_ONE_CLICK=1` and is never a
+  CI dependency.
 - ESM-only, Biome (single quotes, no semicolons), vitest, changesets.
 - Published as **`@defuse-protocol/nearintents-mpp-sdk`** with npm provenance.
   Releases flow through changesets: PRs that change published behavior add a

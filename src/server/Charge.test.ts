@@ -1,6 +1,6 @@
 import { Challenge, Receipt, Store } from 'mppx'
 import { Mppx } from 'mppx/server'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { createOneClickMock, type OneClickMock } from '../../test/OneClickMock.js'
 import { charge as clientCharge } from '../client/Charge.js'
@@ -42,8 +42,8 @@ async function setup(overrides: Partial<charge.Parameters> = {}) {
 
 type Handler = Awaited<ReturnType<typeof setup>>['handler']
 
-async function get402(handler: Handler) {
-  const result = await handler(new Request(URL_))
+async function get402(handler: Handler, init?: RequestInit) {
+  const result = await handler(new Request(URL_, init))
   expect(result.status).toBe(402)
   if (result.status !== 402) throw new Error('unreachable')
   return Challenge.fromResponse(result.challenge)
@@ -178,6 +178,65 @@ describe('402 → deposit → credential → 200 + receipt (success path)', () =
     })
     expect(events.some((event) => event.type === 'settlement.terminal')).toBe(false)
   })
+
+  test('per-request refund resolver binds each quote to the payer refund address', async () => {
+    const { handler } = await setup({
+      refundTo: ({ capturedRequest }) =>
+        capturedRequest?.headers.get('near-intents-refund-to') ?? '',
+    })
+
+    const payerA = '0x1111111111111111111111111111111111111111'
+    const payerB = '0x2222222222222222222222222222222222222222'
+    const first = await get402(handler, { headers: { 'near-intents-refund-to': payerA } })
+    const second = await get402(handler, { headers: { 'near-intents-refund-to': payerB } })
+
+    expect((first.request as Types.ChargeRequest).methodDetails.refundTo).toBe(payerA)
+    expect((second.request as Types.ChargeRequest).methodDetails.refundTo).toBe(payerB)
+    expect((second.request as Types.ChargeRequest).recipient).not.toBe(
+      (first.request as Types.ChargeRequest).recipient,
+    )
+    const quoteRequests = mock.requests
+      .filter((request) => request.path === '/v0/quote')
+      .map((request) => (request.body as { refundTo: string }).refundTo)
+    expect(quoteRequests).toEqual([payerA, payerB])
+  })
+
+  test('per-request refund resolver fails closed when payer context is missing', async () => {
+    const { handler } = await setup({ refundTo: () => '' })
+    await expect(handler(new Request(URL_))).rejects.toThrow(/must know the payer refund address/)
+  })
+})
+
+describe('production configuration guardrails', () => {
+  const create = (overrides: Partial<charge.Parameters>) =>
+    charge({
+      originAsset: ARB_USDC,
+      destinationAsset: NEAR_USDC,
+      destinationRecipient: 'merchant.near',
+      refundTo: '0x2527D02599Ba641c19FEa793cD0F9a6e8457C317',
+      amountOut: '1000000',
+      ...overrides,
+    })
+
+  test('fails fast when the replay store is not atomic', () => {
+    const nonAtomicStore = {
+      async get() {
+        return null
+      },
+      async put() {},
+      async delete() {},
+    }
+    expect(() => create({ store: nonAtomicStore as never })).toThrow(/atomic store/)
+  })
+
+  test('fails fast on unsafe timeout, polling, and slippage values', () => {
+    expect(() => create({ settlementTimeout: 0 })).toThrow(/settlementTimeout/)
+    expect(() => create({ pollInterval: -1 })).toThrow(/pollInterval/)
+    expect(() => create({ oneClick: { requestTimeoutMs: 0 } })).toThrow(
+      /oneClick\.requestTimeoutMs/,
+    )
+    expect(() => create({ slippageTolerance: 10_001 })).toThrow(/slippageTolerance/)
+  })
 })
 
 describe('non-success terminals → 402 with mapped problem type + fresh-challenge recovery', () => {
@@ -228,6 +287,31 @@ describe('replay protection', () => {
     expect(body.type).toBe('https://paymentauth.org/problems/verification-failed')
   })
 
+  test('hex replay keys ignore case and the optional 0x prefix', async () => {
+    const { handler } = await setup()
+    const challenge = await get402(handler)
+    expect((await pay(handler, challenge, HASH)).status).toBe(200)
+
+    const fresh = await get402(handler)
+    const equivalent = HASH.slice(2).toUpperCase()
+    const { body } = await problemOf(await pay(handler, fresh, equivalent))
+    expect(body.type).toBe('https://paymentauth.org/problems/verification-failed')
+  })
+
+  test('case-sensitive NEAR hashes do not collide in the replay store', async () => {
+    const { handler } = await setup({
+      originAsset: NEAR_USDC,
+      destinationAsset: ARB_USDC,
+      destinationRecipient: '0x2527D02599Ba641c19FEa793cD0F9a6e8457C317',
+      refundTo: 'merchant.near',
+    })
+    const first = await get402(handler)
+    expect((await pay(handler, first, 'AbCDefghijk123456789')).status).toBe(200)
+
+    const second = await get402(handler)
+    expect((await pay(handler, second, 'aBCDefghijk123456789')).status).toBe(200)
+  })
+
   test('concurrency: the same credential presented twice settles exactly once', async () => {
     const { handler } = await setup()
     const challenge = await get402(handler)
@@ -245,7 +329,7 @@ describe('replay protection', () => {
     const { handler, store } = await setup()
     const challenge = await get402(handler)
     // Simulate a crashed settlement that left a stale in-flight claim.
-    await store.put(`nearintents-mpp-sdk:hash:${HASH.toLowerCase()}`, {
+    await store.put(`nearintents-mpp-sdk:hash:eip155:42161:${HASH.slice(2).toLowerCase()}`, {
       state: 'inflight',
       leaseUntil: Date.now() - 1000,
     })
@@ -311,19 +395,79 @@ describe('backend unavailability and settlement timeout (5xx, never verification
 })
 
 describe('deposit confirmation (spec §Verification step 3)', () => {
-  test('SUCCESS whose observed deposits do not include the presented hash → verification-failed; hash stays usable', async () => {
+  test('a wrong hash on a non-success terminal is not consumed and does not retire the quote', async () => {
+    const { handler, store } = await setup()
+    const observedHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
+    mock.script({ outcome: 'REFUNDED', originTxHashes: [observedHash] })
+    const challenge = await get402(handler)
+
+    const wrong = await problemOf(await pay(handler, challenge, HASH))
+    expect(wrong.body.type).toBe('https://paymentauth.org/problems/verification-failed')
+    expect(await store.get(`nearintents-mpp-sdk:hash:eip155:42161:${HASH.slice(2)}`)).toBeNull()
+
+    const real = await problemOf(await pay(handler, challenge, observedHash))
+    expect(real.body.type).toBe('https://paymentauth.org/problems/settlement-failed')
+  })
+
+  test('a wrong-hash race does not retire the quote or strand the observed payer hash', async () => {
     const { handler } = await setup()
+    const observedHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
     mock.script({
-      originTxHashes: ['0x1111111111111111111111111111111111111111111111111111111111111111'],
+      originTxHashes: [observedHash],
     })
     const challenge = await get402(handler)
 
     const { body } = await problemOf(await pay(handler, challenge, HASH))
     expect(body.type).toBe('https://paymentauth.org/problems/verification-failed')
 
-    // The presented hash settled nothing — it must remain usable for a fresh attempt.
+    // The terminal quote remains recoverable by the real payer rather than
+    // being retired by the unrelated credential.
+    expect((await pay(handler, challenge, observedHash)).status).toBe(200)
+  })
+
+  test('a wrong-hash race takes the terminal quote out of the cache for new payers', async () => {
+    const { handler } = await setup()
+    const observedHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
+    mock.script({
+      originTxHashes: [observedHash],
+    })
+    const challenge = await get402(handler)
+    const recipient = (challenge.request as Types.ChargeRequest).recipient
+
+    const { body } = await problemOf(await pay(handler, challenge, HASH))
+    expect(body.type).toBe('https://paymentauth.org/problems/verification-failed')
+
+    // The backend already reached a terminal state for this deposit address,
+    // so a new payer must not be handed it from the quote cache.
     const fresh = await get402(handler)
-    expect((await pay(handler, fresh, HASH)).status).toBe(200)
+    expect((fresh.request as Types.ChargeRequest).recipient).not.toBe(recipient)
+
+    // The real payer can still present the observed transaction.
+    expect((await pay(handler, challenge, observedHash)).status).toBe(200)
+  })
+
+  test('SUCCESS without an indexed settlement reference can be retried', async () => {
+    const { handler, store } = await setup()
+    mock.script({ omitSettlementReferences: true })
+    const challenge = await get402(handler)
+    const recipient = (challenge.request as Types.ChargeRequest).recipient
+    const authorization = await credentialFor(challenge, HASH)
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const missing = await handler(new Request(URL_, { headers: { authorization } }))
+    consoleError.mockRestore()
+    expect(missing.status).toBe(402)
+    if (missing.status !== 402) throw new Error('unreachable')
+    expect(missing.challenge.status).toBe(500)
+    expect(await store.get(`nearintents-mpp-sdk:hash:eip155:42161:${HASH.slice(2)}`)).toBeNull()
+    const deposit = (await store.get(`nearintents-mpp-sdk:deposit:${recipient}`)) as {
+      state?: string
+    } | null
+    expect(deposit?.state).toBe('active')
+
+    mock.setSettlementReference(recipient, 'indexed-destination-hash')
+    const retry = await handler(new Request(URL_, { headers: { authorization } }))
+    expect(retry.status).toBe(200)
   })
 })
 

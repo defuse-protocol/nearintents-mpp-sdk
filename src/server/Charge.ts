@@ -51,7 +51,7 @@ export function charge(parameters: charge.Parameters) {
     // Distribution-channel attribution: every 1Click swap minted by this
     // payment method carries the "mpp" referral (mirrors the x402 gateway).
     referral = 'mpp',
-    refundTo,
+    refundTo: refundToOption,
     slippageTolerance = 100,
   } = parameters
 
@@ -70,14 +70,31 @@ export function charge(parameters: charge.Parameters) {
   const originNetwork = Types.chainOf(originAsset)
   const destinationNetwork = Types.chainOf(destinationAsset)
 
+  if (typeof refundToOption === 'string' && !refundToOption.trim())
+    throw new Error('nearintents-mpp-sdk: refundTo must not be empty.')
+
   const expiresWindowMs = (parameters.expiresWindow ?? 300) * 1000
   const quoteDeadlineBufferMs = (parameters.quoteDeadlineBuffer ?? 900) * 1000
   const pollIntervalMs = parameters.pollInterval ?? 2000
 
-  const store = Store.from(
-    (parameters.store ?? Store.memory()) as Store.AtomicStore<charge.StoreItemMap>,
-    { keyPrefix: parameters.storeKeyPrefix ?? '' },
-  )
+  assertPositiveFinite('expiresWindow', expiresWindowMs)
+  assertPositiveFinite('quoteDeadlineBuffer', quoteDeadlineBufferMs)
+  assertNonNegativeFinite('pollInterval', pollIntervalMs)
+  if (oneClick.requestTimeoutMs !== undefined)
+    assertPositiveFinite('oneClick.requestTimeoutMs', oneClick.requestTimeoutMs)
+  if (parameters.settlementTimeout !== undefined)
+    assertPositiveFinite('settlementTimeout', parameters.settlementTimeout)
+  if (!Number.isInteger(slippageTolerance) || slippageTolerance < 0 || slippageTolerance > 10_000)
+    throw new Error('nearintents-mpp-sdk: slippageTolerance must be an integer from 0 to 10000.')
+
+  const backingStore = parameters.store ?? Store.memory()
+  if (typeof backingStore.update !== 'function')
+    throw new Error(
+      'nearintents-mpp-sdk: charge() requires an atomic store with update() for replay protection.',
+    )
+  const store = Store.from(backingStore as Store.AtomicStore<charge.StoreItemMap>, {
+    keyPrefix: parameters.storeKeyPrefix ?? '',
+  })
 
   // Token list is fetched lazily and re-fetched once on an unresolved asset
   // (the list evolves); a persistent miss is a merchant-config error.
@@ -106,9 +123,10 @@ export function charge(parameters: charge.Parameters) {
 
   const depositKey = (address: string) => `nearintents-mpp-sdk:deposit:${address}` as const
   const quoteKey = (identity: string) => `nearintents-mpp-sdk:quote:${identity}` as const
-  const hashKey = (hash: string) => `nearintents-mpp-sdk:hash:${hash.toLowerCase()}` as const
+  const hashKey = (network: string, hash: string) =>
+    `nearintents-mpp-sdk:hash:${network}:${OneClick.canonicalTxHash(hash, network)}` as const
 
-  function identityOf(amountOut: string): string {
+  function identityOf(amountOut: string, refundTo: string): string {
     return [
       originAsset,
       destinationAsset,
@@ -120,14 +138,31 @@ export function charge(parameters: charge.Parameters) {
     ].join('|')
   }
 
+  async function resolveRefundTo(
+    capturedRequest: Method.CapturedRequest | undefined,
+  ): Promise<string> {
+    const value =
+      typeof refundToOption === 'function'
+        ? await refundToOption({ capturedRequest, originNetwork })
+        : refundToOption
+    if (!value?.trim())
+      throw new Error(
+        'nearintents-mpp-sdk: refundTo resolver returned no address; the server must know the payer refund address before minting an executable quote.',
+      )
+    return value
+  }
+
   /**
    * Returns the route's active canonical request, minting a fresh 1Click
    * quote when there is none — or when the cached one is stale (early
    * refresh: a quote is stale once `now + expiresWindow > quote deadline`,
    * so the challenge `expires` always precedes the active quote's deadline).
    */
-  async function resolveActiveRequest(amountOut: string): Promise<Types.ChargeRequest> {
-    const identity = identityOf(amountOut)
+  async function resolveActiveRequest(
+    amountOut: string,
+    refundTo: string,
+  ): Promise<Types.ChargeRequest> {
+    const identity = identityOf(amountOut, refundTo)
 
     const pointer = await store.get(quoteKey(identity))
     if (pointer && pointer.identity === identity) {
@@ -221,6 +256,11 @@ export function charge(parameters: charge.Parameters) {
       if (!current) return { op: 'noop', result: undefined }
       return { op: 'set', value: { ...current, state: 'settled' }, result: undefined }
     })
+    await dropQuotePointer(depositAddress, identity)
+  }
+
+  /** Drops the cache pointer only, so the next 402 mints fresh while the deposit stays presentable. */
+  async function dropQuotePointer(depositAddress: string, identity: string): Promise<void> {
     await store.update(quoteKey(identity), (current) => {
       if (current?.depositAddress !== depositAddress) return { op: 'noop', result: undefined }
       return { op: 'delete', result: undefined }
@@ -229,10 +269,11 @@ export function charge(parameters: charge.Parameters) {
 
   /** Atomically claims `hash` as in-flight. Expired leases are reclaimable. */
   async function claimHash(
+    network: string,
     hash: string,
     leaseUntil: number,
   ): Promise<'claimed' | 'inflight' | 'consumed'> {
-    return store.update(hashKey(hash), (current) => {
+    return store.update(hashKey(network, hash), (current) => {
       if (current?.state === 'consumed') return { op: 'noop', result: 'consumed' }
       if (current?.state === 'inflight' && current.leaseUntil > Date.now())
         return { op: 'noop', result: 'inflight' }
@@ -259,7 +300,7 @@ export function charge(parameters: charge.Parameters) {
         minAmountIn: '0',
         depositMemo: null,
         slippageTolerance,
-        refundTo,
+        refundTo: typeof refundToOption === 'string' ? refundToOption : 'payer-supplied',
         settlementBackend: Types.settlementBackend,
         credentialTypes: [...Types.credentialTypes],
       },
@@ -270,10 +311,16 @@ export function charge(parameters: charge.Parameters) {
     // binding mismatch → 402 with a fresh challenge (the client-recovery flow).
     stableBinding(request) {
       const { amount, currency, methodDetails, recipient } = request
-      return { amount, currency, originNetwork: methodDetails.originNetwork, recipient }
+      return {
+        amount,
+        currency,
+        originNetwork: methodDetails.originNetwork,
+        recipient,
+        refundTo: methodDetails.refundTo,
+      }
     },
 
-    async request({ credential, request }) {
+    async request({ capturedRequest, credential, request }) {
       const amountOut =
         (request.methodDetails as Partial<Types.MethodDetails> | undefined)?.amountOut ??
         defaultAmountOut
@@ -294,7 +341,7 @@ export function charge(parameters: charge.Parameters) {
           if (
             deposit &&
             deposit.state === 'active' &&
-            deposit.identity === identityOf(amountOut) &&
+            deposit.identity === identityOf(amountOut, deposit.request.methodDetails.refundTo) &&
             Date.parse(deposit.deadline) > Date.now()
           )
             return deposit.request
@@ -304,7 +351,7 @@ export function charge(parameters: charge.Parameters) {
         // carrying this fresh challenge — the spec's client-recovery flow.
       }
 
-      return resolveActiveRequest(amountOut)
+      return resolveActiveRequest(amountOut, await resolveRefundTo(capturedRequest))
     },
 
     async verify({ credential, request }) {
@@ -344,7 +391,7 @@ export function charge(parameters: charge.Parameters) {
       // atomically; consume permanently only on a terminal settlement state.
       // The lease covers the settlement budget so a crashed settlement never
       // strands a legitimate retry.
-      const claim = await claimHash(hash, Date.now() + settlementTimeoutMs + 60_000)
+      const claim = await claimHash(originNetwork, hash, Date.now() + settlementTimeoutMs + 60_000)
       if (claim === 'consumed')
         throw new Errors.VerificationFailedError({
           reason: 'transaction hash has already been used',
@@ -380,15 +427,23 @@ export function charge(parameters: charge.Parameters) {
             emit({ type: 'settlement.status', depositAddress: recipient, status: observed }),
         })
 
-        // Any terminal state spends the quote and its deposit address —
-        // including SUCCESS whose observed deposits don't match the presented
-        // hash (below). Retiring here, before that match check, is deliberate:
-        // once the backend reaches SUCCESS the deposit is delivered, so the
-        // quote MUST leave rotation regardless of which credential presented
-        // it. Deferring the retire until after a match check would strand a
-        // backend-settled deposit as "active" in the store, and a later
-        // cache hit could hand a fresh payer an already-spent deposit address.
-        await retireDeposit(recipient, deposit.identity)
+        // Deposit confirmation applies to every terminal outcome. Do not
+        // retire the quote or consume an unrelated hash: the real payer must
+        // still be able to present the observed transaction after a bad-hash
+        // race. Hex hashes are canonicalized by matchesOriginTx; base58 and
+        // other formats remain case-sensitive. The backend has still reached
+        // a terminal state for this deposit address, so drop the cache
+        // pointer: a later challenge must not hand a new payer this address.
+        if (!OneClick.matchesOriginTx(status, hash, originNetwork)) {
+          await dropQuotePointer(recipient, deposit.identity)
+          throw new Errors.VerificationFailedError({
+            reason:
+              'the presented transaction hash is not among the deposits observed for this address',
+          })
+        }
+
+        // Observability: report the terminal state (retirement is handled per
+        // outcome below, not here — a bad-hash race must not spend the quote).
         emit({
           type: 'settlement.terminal',
           depositAddress: recipient,
@@ -400,14 +455,6 @@ export function charge(parameters: charge.Parameters) {
         })
 
         if (status.status === 'SUCCESS') {
-          // Deposit confirmation: the presented hash must be among the
-          // origin-chain transactions the backend observed for this address.
-          if (!OneClick.matchesOriginTx(status, hash))
-            throw new Errors.VerificationFailedError({
-              reason:
-                'the presented transaction hash is not among the deposits observed for this address',
-            })
-          hashOutcome = 'consume'
           const reference =
             OneClick.destinationTxHash(status) ?? status.swapDetails?.nearTxHashes?.[0]
           // The merchant has been paid at this point; a missing reference is
@@ -430,12 +477,18 @@ export function charge(parameters: charge.Parameters) {
             originTxHash: hash,
             reference,
           })
+          // Retire only after the receipt is complete. If the backend reports
+          // SUCCESS before its settlement reference is indexed, the same
+          // credential can be retried instead of being stranded.
+          await retireDeposit(recipient, deposit.identity)
+          hashOutcome = 'consume'
           return receipt
         }
 
         // Non-success terminal (FAILED/REFUNDED/INCOMPLETE_DEPOSIT): the
         // deposit is refunded to refundTo and the hash can never deliver —
         // consume it. The client recovers with a fresh challenge.
+        await retireDeposit(recipient, deposit.identity)
         hashOutcome = 'consume'
         throw (
           OneClick.terminalError(status) ??
@@ -465,11 +518,22 @@ export function charge(parameters: charge.Parameters) {
         }
         throw error
       } finally {
-        if (hashOutcome === 'consume') await store.put(hashKey(hash), { state: 'consumed' })
-        else await store.delete(hashKey(hash))
+        const key = hashKey(originNetwork, hash)
+        if (hashOutcome === 'consume') await store.put(key, { state: 'consumed' })
+        else await store.delete(key)
       }
     },
   })
+}
+
+function assertPositiveFinite(name: string, value: number): void {
+  if (!Number.isFinite(value) || value <= 0)
+    throw new Error(`nearintents-mpp-sdk: ${name} must be a positive finite number.`)
+}
+
+function assertNonNegativeFinite(name: string, value: number): void {
+  if (!Number.isFinite(value) || value < 0)
+    throw new Error(`nearintents-mpp-sdk: ${name} must be a non-negative finite number.`)
 }
 
 export declare namespace charge {
@@ -545,11 +609,19 @@ export declare namespace charge {
     /** Merchant address on the destination chain. */
     destinationRecipient: string
     /**
-     * Merchant-configured refund address on the origin chain. The server
-     * cannot know the payer pre-payment; clients recover refunds off-band
-     * (document this in the merchant's terms).
+     * Origin-chain refund address, either fixed or resolved before each wet
+     * quote. Prefer a resolver backed by authenticated payer context (or a
+     * validated HTTP header) so failed swaps return funds directly to the
+     * payer. A resolved address is quote-bound and echoed in the challenge.
      */
-    refundTo: string
+    refundTo:
+      | string
+      | ((parameters: {
+          /** Captured transport request. HTTP integrations can read a payer hint from headers. */
+          capturedRequest?: Method.CapturedRequest | undefined
+          /** CAIP-2 origin network whose address format the resolver must return. */
+          originNetwork: string
+        }) => string | Promise<string>)
     /**
      * Default price: exact amount the merchant receives, in base units of
      * `destinationAsset` (EXACT_OUTPUT). Overridable per route via

@@ -4,7 +4,7 @@ Reference implementation of the **`nearintents` payment method** for
 [MPP (Machine Payments Protocol)](https://mpp.dev) enabling cross-chain HTTP 402
 payments settled by [NEAR Intents](https://near-intents.org): clients pay on
 any supported chain, merchants receive an exact amount on theirs. Extends
-[`mppx`](https://github.com/wevm/mppx). The original spec this implementation is based on is found at [Tempo's MPP specs repository](https://github.com/tempoxyz/mpp-specs/blob/main/specs/methods/nearintents/draft-nearintents-charge-00.md).
+[`mppx`](https://github.com/wevm/mppx). The original spec this implementation is based on is found at [Tempo's MPP specs repository](https://github.com/tempoxyz/mpp-specs/blob/main/specs/methods/nearintents/draft-nearintents-charge-01.md).
 
 ## Usage
 
@@ -116,10 +116,21 @@ invocation, then polls a separately funded deposit in a second invocation.
 
 ## Operational notes
 
-- **Refunds.** `methodDetails.refundTo` is a **merchant-configured** address
-  on the origin chain (the server cannot know the payer before payment).
-  Every non-success terminal refunds the deposit there; payers recover
-  off-band per the merchant's terms. Disclose this in your terms of service.
+- **Refunds.** A fixed `refundTo` sends non-successful settlements to the
+  merchant's origin-chain address; document the off-band recovery policy.
+- **Payer refund addresses.** -01 prefers a payer-controlled `refundTo`. Pass
+  a resolver that derives it from *authenticated* request context, and fall
+  back to the fixed merchant address so clients that send no hint still get a
+  402:
+
+  ```ts
+  refundTo: async ({ capturedRequest }) =>
+    (await payerRefundAddress(capturedRequest)) ?? MERCHANT_REFUND_ADDRESS,
+  ```
+
+  Every distinct address mints its own executable quote and store record, so
+  never take it from an unauthenticated header without validation and rate
+  limiting. Payers pin it with `policy.expectedRefundTo`.
 - **Per-origin expiry.** Size `expiresWindow` (and the mppx route `expires`)
   to the origin chain: minutes for fast chains, 45–60 minutes for Bitcoin.
   The example server creates the route handler per request so the absolute
@@ -154,6 +165,10 @@ invocation, then polls a separately funded deposit in a second invocation.
   the destination asset to the merchant or refunds the deposit. Comparable to
   entrusting a payment processor with a transfer; agents applying per-method
   risk policies can key off the `method` and `settlementBackend` fields.  
+- **Idempotency.** Hash claims and terminal consumption are atomic when the
+  configured store is atomic. The application still owns `Idempotency-Key`
+  handling for protected POST side effects; do not treat payment replay
+  protection as response-body idempotency.
 
 ## Observability
 
@@ -203,7 +218,7 @@ also own replay protection.
 ## Spec
 
 The normative wire contract is
-[`docs/spec/draft-nearintents-charge-00.md`](docs/spec/draft-nearintents-charge-00.md)
+[`docs/spec/draft-nearintents-charge-01.md`](docs/spec/draft-nearintents-charge-01.md)
 (registered in
 [`tempoxyz/mpp-specs`](https://github.com/tempoxyz/mpp-specs) under
 `specs/methods/nearintents/`). Conformance vectors in

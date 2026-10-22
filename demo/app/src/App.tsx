@@ -311,8 +311,8 @@ export default function App() {
 
       <footer className="muted">
         Deposits are custodied by the NEAR Intents settlement system for the duration of the swap;
-        every non-success outcome refunds the merchant-configured refund address. Client caps: 2
-        USDC / 20k sats per purchase.
+        every non-success outcome refunds the demo merchant's custodial address for off-band
+        recovery. Client caps: 2 USDC / 20k sats per purchase.
       </footer>
     </main>
   )

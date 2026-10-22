@@ -11,8 +11,8 @@
  * Env:  ONE_CLICK_JWT      1Click partner JWT (unauthenticated works, 0.2% fee)
  *       MPP_SECRET_KEY     challenge-HMAC secret, ≥32 bytes (dev default below)
  *       MERCHANT_RECIPIENT NEAR account receiving the funds
- *       REFUND_TO_ARB      merchant refund address on Arbitrum
- *       REFUND_TO_BTC      merchant refund address on Bitcoin
+ *       REFUND_TO_ARB      custodial merchant refund address on Arbitrum
+ *       REFUND_TO_BTC      custodial merchant refund address on Bitcoin
  *       PORT               listen port (default 8402)
  */
 import * as http from 'node:http'

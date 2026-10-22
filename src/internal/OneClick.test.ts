@@ -67,6 +67,19 @@ describe('endpoints', () => {
     )
   })
 
+  test('quote rejects malformed amounts, deadlines, and time estimates', async () => {
+    const { config } = await setup()
+
+    mock.script({ amountIn: 'not-an-integer' })
+    await expect(OneClick.quote(config, quoteParameters)).rejects.toThrow(/non-integer input/)
+
+    mock.script({ deadline: 'not-a-date' })
+    await expect(OneClick.quote(config, quoteParameters)).rejects.toThrow(/invalid deadline/)
+
+    mock.script({ timeEstimate: Number.NaN })
+    await expect(OneClick.quote(config, quoteParameters)).rejects.toThrow(/invalid timeEstimate/)
+  })
+
   test('4xx maps to OneClickError, 5xx and network failure to OneClickUnavailableError', async () => {
     const { config } = await setup()
 
@@ -85,6 +98,10 @@ describe('endpoints', () => {
     await expect(OneClick.getTokens({ baseUrl: 'http://127.0.0.1:1' })).rejects.toBeInstanceOf(
       OneClick.OneClickUnavailableError,
     )
+  })
+
+  test('rejects invalid request timeout configuration before network I/O', async () => {
+    await expect(OneClick.getTokens({ requestTimeoutMs: 0 })).rejects.toThrow(/positive finite/)
   })
 
   test('submitDeposit records the tx hash and advances the swap toward the outcome', async () => {
@@ -178,6 +195,40 @@ describe('pollToTerminal', () => {
     ).rejects.toBeInstanceOf(OneClick.OneClickUnavailableError)
   })
 
+  test('the total polling budget caps a single hanging status request', async () => {
+    const hangingFetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal
+        if (!signal) return
+        const onAbort = () => reject(signal.reason)
+        if (signal.aborted) onAbort()
+        else signal.addEventListener('abort', onAbort, { once: true })
+      })) as typeof globalThis.fetch
+    const started = Date.now()
+
+    await expect(
+      OneClick.pollToTerminal(
+        { fetch: hangingFetch, requestTimeoutMs: 30_000 },
+        { depositAddress: 'hanging-deposit', timeoutMs: 40, intervalMs: 5 },
+      ),
+    ).rejects.toBeInstanceOf(OneClick.OneClickUnavailableError)
+    expect(Date.now() - started).toBeLessThan(500)
+  })
+
+  test('rejects invalid timeout and polling interval configuration', async () => {
+    const { config } = await setup()
+    await expect(
+      OneClick.pollToTerminal(config, { depositAddress: 'x', timeoutMs: 0 }),
+    ).rejects.toThrow(/positive finite/)
+    await expect(
+      OneClick.pollToTerminal(config, {
+        depositAddress: 'x',
+        timeoutMs: 100,
+        intervalMs: -1,
+      }),
+    ).rejects.toThrow(/non-negative finite/)
+  })
+
   test('aborts via signal', async () => {
     const { config } = await setup()
     mock.script({ statuses: ['PROCESSING'] })
@@ -266,6 +317,38 @@ describe('tx hash matching', () => {
     expect(OneClick.matchesOriginTx(result, 'ftchyxxqh1k6vkjq9wq5q1f8s2n3p4r5t6u7v8w9x0yz')).toBe(
       false,
     )
+  })
+
+  test('canonical replay keys normalize hex but preserve case-sensitive hashes', () => {
+    expect(
+      OneClick.canonicalTxHash(
+        '0x9BCFF372AEE89B648C922B850573B22387C31D693079F5E37CD255814E2D615A',
+        'eip155:42161',
+      ),
+    ).toBe('9bcff372aee89b648c922b850573b22387c31d693079f5e37cd255814e2d615a')
+    expect(
+      OneClick.canonicalTxHash('FtChYxxQh1k6vKjQ9wq5q1f8s2n3p4r5t6u7v8w9x0yz', 'near:mainnet'),
+    ).toBe('FtChYxxQh1k6vKjQ9wq5q1f8s2n3p4r5t6u7v8w9x0yz')
+    // An all-hex string on a case-sensitive network remains exact.
+    expect(OneClick.canonicalTxHash('ABCDEF1234567890', 'near:mainnet')).toBe('ABCDEF1234567890')
+  })
+
+  test('an all-hex-shaped hash remains case-sensitive on NEAR', () => {
+    const result: OneClick.StatusResult = {
+      status: 'SUCCESS',
+      swapDetails: { originChainTxHashes: [{ hash: 'ABCDEF1234567890' }] },
+    }
+    expect(OneClick.matchesOriginTx(result, 'abcdef1234567890', 'near:mainnet')).toBe(false)
+  })
+
+  test('canonical hex namespaces compare transaction hashes case-insensitively', () => {
+    const result: OneClick.StatusResult = {
+      status: 'SUCCESS',
+      swapDetails: { originChainTxHashes: [{ hash: 'ABCDEF1234567890' }] },
+    }
+    expect(OneClick.matchesOriginTx(result, 'abcdef1234567890', 'xrpl:0')).toBe(true)
+    expect(OneClick.matchesOriginTx(result, '0xabcdef1234567890', 'starknet:SN_MAIN')).toBe(true)
+    expect(OneClick.matchesOriginTx(result, 'abcdef1234567890', 'stellar:pubnet')).toBe(true)
   })
 })
 

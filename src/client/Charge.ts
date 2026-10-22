@@ -123,6 +123,12 @@ export declare namespace charge {
           amountOut?: string | undefined
         }
       | undefined
+    /**
+     * Expected origin-chain refund address. When set, the client refuses a
+     * challenge whose `methodDetails.refundTo` differs. When unset, the client
+     * accepts the merchant's refund address and its disclosed refund policy.
+     */
+    expectedRefundTo?: string | undefined
   }
 
   /**
@@ -164,8 +170,16 @@ export declare namespace charge {
 
 /** @internal */
 function assertPolicy(policy: charge.Policy | undefined, request: Types.ChargeRequest): void {
-  if (!policy) return
   const { methodDetails } = request
+
+  const expectedRefundTo = policy?.expectedRefundTo
+  if (
+    expectedRefundTo !== undefined &&
+    !Types.addressEqual(methodDetails.originNetwork, expectedRefundTo, methodDetails.refundTo)
+  )
+    throw new PolicyError('refund address does not match the payer address')
+
+  if (!policy) return
 
   if (
     policy.allowedOriginNetworks &&
