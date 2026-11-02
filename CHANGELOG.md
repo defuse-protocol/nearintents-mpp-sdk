@@ -1,5 +1,14 @@
 # @defuse-protocol/nearintents-mpp-sdk
 
+## 0.4.0
+
+### Minor Changes
+
+- 97b7d06: Adopt mppx 0.17.0: bump the exact dev and peer dependency pin from 0.15.0.
+  The intervening upstream minors (0.16 per-route identity, 0.17 payment-stage
+  identity) change APIs this method does not use; no code changes. Consumers
+  must upgrade mppx to 0.17.0.
+
 ## 0.3.0
 
 ### Minor Changes
