@@ -63,6 +63,13 @@ describe('CAIP-2 / CAIP-19 helpers', () => {
     ).toBe(false)
   })
 
+  test('assetEqual compares percent-decoded references', () => {
+    expect(
+      Types.assetEqual('sui:mainnet/token:0xab%3a%3ausdc', 'sui:mainnet/token:0xab%3A%3Ausdc'),
+    ).toBe(true)
+    expect(Types.assetEqual('sui:mainnet/token:0xab%ZZ', 'sui:mainnet/token:0xab%ZZ')).toBe(false)
+  })
+
   test('chainOf / toSource', () => {
     expect(Types.chainOf('eip155:42161/erc20:0xabcdef0123456789abcdef0123456789abcdef01')).toBe(
       'eip155:42161',

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 
 import { createOneClickMock, defaultTokens, type OneClickMock } from '../../test/OneClickMock.js'
 import { SettlementFailedError } from '../Errors.js'
-import { assetEqual } from '../Types.js'
+import { assetEqual, caip19 } from '../Types.js'
 import * as OneClick from './OneClick.js'
 
 let mock: OneClickMock
@@ -329,8 +329,23 @@ describe('tx hash matching', () => {
     expect(
       OneClick.canonicalTxHash('FtChYxxQh1k6vKjQ9wq5q1f8s2n3p4r5t6u7v8w9x0yz', 'near:mainnet'),
     ).toBe('FtChYxxQh1k6vKjQ9wq5q1f8s2n3p4r5t6u7v8w9x0yz')
+    // Tron's native API omits `0x`, its JSON-RPC adds it: one key either way.
+    expect(
+      OneClick.canonicalTxHash(
+        '0x2F134F8DB23FB6D3064DC24EB2466A92CDAD02EB0D4B181505181F6668B3C07A',
+        'tron:728126428',
+      ),
+    ).toBe('2f134f8db23fb6d3064dc24eb2466a92cdad02eb0d4b181505181f6668b3c07a')
+    expect(
+      OneClick.canonicalTxHash(
+        '0x7C66652F9F5DFC1BF12DDBCF7371665FD651F49A90E9700988AC49442135B0E5',
+        'aptos:1',
+      ),
+    ).toBe('7c66652f9f5dfc1bf12ddbcf7371665fd651f49a90e9700988ac49442135b0e5')
     // An all-hex string on a case-sensitive network remains exact.
     expect(OneClick.canonicalTxHash('ABCDEF1234567890', 'near:mainnet')).toBe('ABCDEF1234567890')
+    expect(OneClick.canonicalTxHash('ABCDEF1234567890', 'sui:mainnet')).toBe('ABCDEF1234567890')
+    expect(OneClick.canonicalTxHash('ABCDEF1234567890', 'tvm:-239')).toBe('ABCDEF1234567890')
   })
 
   test('an all-hex-shaped hash remains case-sensitive on NEAR', () => {
@@ -349,6 +364,9 @@ describe('tx hash matching', () => {
     expect(OneClick.matchesOriginTx(result, 'abcdef1234567890', 'xrpl:0')).toBe(true)
     expect(OneClick.matchesOriginTx(result, '0xabcdef1234567890', 'starknet:SN_MAIN')).toBe(true)
     expect(OneClick.matchesOriginTx(result, 'abcdef1234567890', 'stellar:pubnet')).toBe(true)
+    expect(OneClick.matchesOriginTx(result, '0xabcdef1234567890', 'tron:728126428')).toBe(true)
+    expect(OneClick.matchesOriginTx(result, '0xabcdef1234567890', 'aptos:1')).toBe(true)
+    expect(OneClick.matchesOriginTx(result, 'abcdef1234567890', 'sui:mainnet')).toBe(false)
   })
 })
 
@@ -423,5 +441,75 @@ describe('createAssetMap (CAIP-19 ↔ 1Click asset ids)', () => {
     // Token list stores lowercase; the spec example uses the checksummed form.
     const specForm = 'eip155:42161/erc20:0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
     expect(assetEqual(rendered!, specForm)).toBe(true)
+  })
+
+  const bidirectional: [caip19Id: string, assetId: string][] = [
+    [
+      'tron:728126428/token:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+      'nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near',
+    ],
+    ['tron:728126428/slip44:195', 'nep141:tron.omft.near'],
+    [
+      'aptos:1/token:0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b',
+      'nep141:aptos-88cb7619440a914fe6400149a12b443c3ac21d59.omft.near',
+    ],
+    [
+      'aptos:1/token:0x261c85bc1bb5acc3ffcf769530c732d4182c3bbd84936d427125fcd4732e9879',
+      '1cs_v1:aptos:aptos-fa:0x261c85bc1bb5acc3ffcf769530c732d4182c3bbd84936d427125fcd4732e9879',
+    ],
+    ['aptos:1/slip44:637', 'nep141:aptos.omft.near'],
+    ['starknet:SN_MAIN/slip44:9004', 'nep141:starknet.omft.near'],
+    [
+      'sui:mainnet/token:0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7%3A%3Ausdc%3A%3AUSDC',
+      'nep141:sui-c1b81ecaf27933252d31a963bc5e9458f13c18ce.omft.near',
+    ],
+    [
+      'tvm:-239/token:EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id%5FsDs',
+      'nep245:v2_1.omni.hot.tg:1117_3tsdfyziyc7EJbP2aULWSKU4toBaAcN4FdTgfm5W1mC4ouR',
+    ],
+    ['tvm:-239/slip44:607', 'nep245:v2_1.omni.hot.tg:1117_'],
+    ['near:mainnet/nep141:itlx.intellex%5Fxyz.near', 'nep141:itlx.intellex_xyz.near'],
+  ]
+
+  test.each(bidirectional)('%s ↔ %s', (caip19Id, assetId) => {
+    expect(caip19().parse(caip19Id)).toBe(caip19Id)
+    expect(map.toAssetId(caip19Id)).toBe(assetId)
+    expect(map.toCaip19(assetId)).toBe(caip19Id)
+  })
+
+  test('legacy ton:-239 is input-only; percent-decoding tolerates lowercase hex, not malformed escapes', () => {
+    expect(map.toAssetId('ton:-239/slip44:607')).toBe('nep245:v2_1.omni.hot.tg:1117_')
+    expect(
+      map.toAssetId(
+        'sui:mainnet/token:0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7%3a%3ausdc%3a%3aUSDC',
+      ),
+    ).toBe('nep141:sui-c1b81ecaf27933252d31a963bc5e9458f13c18ce.omft.near')
+    expect(map.toAssetId('sui:mainnet/token:0xab%ZZ')).toBeUndefined()
+  })
+
+  test('toCaip19 returns undefined once the encoded reference exceeds 128 characters', () => {
+    const token = (contractAddress: string): OneClick.TokenInfo => ({
+      assetId: contractAddress,
+      decimals: 0,
+      blockchain: 'sui',
+      symbol: 'X',
+      contractAddress,
+    })
+    const atLimit = `0x${'a'.repeat(123)}_`
+    const overLimit = `0x${'a'.repeat(124)}_`
+    const long = OneClick.createAssetMap([token(atLimit), token(overLimit)])
+    expect(long.toCaip19(atLimit)).toBe(`sui:mainnet/token:0x${'a'.repeat(123)}%5F`)
+    expect(long.toCaip19(overLimit)).toBeUndefined()
+  })
+
+  test('merchant config repeating the new defaults keeps working', () => {
+    const configured = OneClick.createAssetMap(defaultTokens, {
+      networks: { 'tron:728126428': 'tron', 'aptos:1': 'aptos', 'tvm:-239': 'ton' },
+      nativeCoinTypes: { tron: 195, aptos: 637, starknet: 9004 },
+    })
+    for (const [caip19Id, assetId] of bidirectional) {
+      expect(configured.toAssetId(caip19Id)).toBe(assetId)
+      expect(configured.toCaip19(assetId)).toBe(caip19Id)
+    }
   })
 })

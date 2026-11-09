@@ -541,10 +541,12 @@ const hexTxHash = /^(0x)?[0-9a-fA-F]{16,}$/
 // Keep base58/base64 families out even when a particular identifier happens
 // to contain only hexadecimal characters.
 const caseInsensitiveHexHashNamespaces = new Set([
+  'aptos',
   'bip122',
   'eip155',
   'stellar',
   'starknet',
+  'tron',
   'xrpl',
 ])
 
@@ -594,6 +596,11 @@ export const defaultNetworks: Record<string, string> = {
   'bip122:1a91e3dace36e2be3bf030a65679fe82': 'doge',
   'bip122:000000000000000000651ef99cb9fcbe': 'bch',
   'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp': 'sol',
+  'tron:728126428': 'tron',
+  'aptos:1': 'aptos',
+  // The first id per blockchain code is the rendered one; `ton:-239` stays
+  // accepted on input only.
+  'tvm:-239': 'ton',
   'ton:-239': 'ton',
   'sui:mainnet': 'sui',
   'stellar:pubnet': 'stellar',
@@ -624,6 +631,9 @@ export const defaultNativeCoinTypes: Record<string, number> = {
   ton: 607,
   stellar: 148,
   sui: 784,
+  tron: 195,
+  aptos: 637,
+  starknet: 9004,
 }
 
 /** CAIP-19 asset-namespace used when rendering a contract asset for a chain namespace. */
@@ -645,7 +655,8 @@ export type AssetMap = {
 /**
  * Builds a bidirectional CAIP-19 ↔ 1Click asset map from the `/v0/tokens`
  * list. Contract assets match on `contractAddress` (case-insensitively for
- * `eip155` chains); `slip44` assets match the chain's token that has no
+ * `eip155` chains) against the percent-decoded asset reference, and render
+ * percent-encoded; `slip44` assets match the chain's token that has no
  * `contractAddress` (chain-native), and only for the chain's canonical coin
  * type — a wrong coin type resolves to nothing rather than silently mapping
  * to the native asset.
@@ -666,16 +677,17 @@ export function createAssetMap(tokens: TokenInfo[], config: Config = {}): AssetM
   function tokenOf(caip19Id: string): TokenInfo | undefined {
     const parsed = Types.parseCaip19(caip19Id)
     const blockchain = blockchainOf(caip19Id)
-    if (!blockchain) return undefined
+    const decoded = Types.decodeAssetReference(parsed.assetReference)
+    if (!blockchain || decoded === undefined) return undefined
 
     if (parsed.assetNamespace === 'slip44') {
       const coinType = nativeCoinTypes[blockchain]
-      if (coinType === undefined || parsed.assetReference !== String(coinType)) return undefined
+      if (coinType === undefined || decoded !== String(coinType)) return undefined
       return tokens.find((token) => token.blockchain === blockchain && !token.contractAddress)
     }
 
     const caseInsensitive = parsed.chain.namespace === 'eip155'
-    const reference = caseInsensitive ? parsed.assetReference.toLowerCase() : parsed.assetReference
+    const reference = caseInsensitive ? decoded.toLowerCase() : decoded
     return tokens.find((token) => {
       if (token.blockchain !== blockchain || !token.contractAddress) return false
       const address = caseInsensitive ? token.contractAddress.toLowerCase() : token.contractAddress
@@ -696,7 +708,9 @@ export function createAssetMap(tokens: TokenInfo[], config: Config = {}): AssetM
       if (token.contractAddress) {
         const namespace = Types.parseCaip2(caip2Id).namespace
         const assetNamespace = contractAssetNamespaces[namespace] ?? 'token'
-        return `${caip2Id}/${assetNamespace}:${token.contractAddress}`
+        const reference = Types.encodeAssetReference(token.contractAddress)
+        if (reference.length > 128) return undefined
+        return `${caip2Id}/${assetNamespace}:${reference}`
       }
       const coinType = nativeCoinTypes[token.blockchain]
       if (coinType === undefined) return undefined

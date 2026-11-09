@@ -56,6 +56,26 @@ export function parseCaip19(id: string): Caip19 {
   }
 }
 
+/**
+ * Percent-encodes a chain-native asset reference for CAIP-19: every character
+ * outside `[-.a-zA-Z0-9]` becomes `%XX` (UTF-8, uppercase hex, RFC 3986).
+ */
+export function encodeAssetReference(reference: string): string {
+  return encodeURIComponent(reference).replace(
+    /[!'()*_~]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
+}
+
+/** Decodes a CAIP-19 asset reference; `undefined` for a malformed `%` sequence. */
+export function decodeAssetReference(reference: string): string | undefined {
+  try {
+    return decodeURIComponent(reference)
+  } catch {
+    return undefined
+  }
+}
+
 /** Returns the CAIP-2 chain component of a CAIP-19 asset identifier. */
 export function chainOf(assetId: string): string {
   const { chain } = parseCaip19(assetId)
@@ -102,9 +122,10 @@ export function addressEqual(network: string, a: string, b: string): boolean {
 /**
  * Compares two CAIP-19 identifiers by parsed components.
  *
- * The asset reference is compared in the chain's canonical form: for `eip155`
- * chains (hex addresses) the comparison is case-insensitive; for all other
- * chains it is exact (e.g. base58 references are case-sensitive).
+ * The asset reference is percent-decoded, then compared in the chain's
+ * canonical form: for `eip155` chains (hex addresses) the comparison is
+ * case-insensitive; for all other chains it is exact (e.g. base58 references
+ * are case-sensitive).
  */
 export function assetEqual(a: string, b: string): boolean {
   let left: Caip19
@@ -118,9 +139,12 @@ export function assetEqual(a: string, b: string): boolean {
   if (left.chain.namespace !== right.chain.namespace) return false
   if (left.chain.reference !== right.chain.reference) return false
   if (left.assetNamespace !== right.assetNamespace) return false
+  const leftReference = decodeAssetReference(left.assetReference)
+  const rightReference = decodeAssetReference(right.assetReference)
+  if (leftReference === undefined || rightReference === undefined) return false
   if (left.chain.namespace === 'eip155')
-    return left.assetReference.toLowerCase() === right.assetReference.toLowerCase()
-  return left.assetReference === right.assetReference
+    return leftReference.toLowerCase() === rightReference.toLowerCase()
+  return leftReference === rightReference
 }
 
 /** Formats a payer identity as a `did:pkh` source (CAIP-2 network + payer address). */
