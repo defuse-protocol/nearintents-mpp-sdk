@@ -59,12 +59,17 @@ export function parseCaip19(id: string): Caip19 {
 /**
  * Percent-encodes a chain-native asset reference for CAIP-19: every character
  * outside `[-.a-zA-Z0-9]` becomes `%XX` (UTF-8, uppercase hex, RFC 3986).
+ * `undefined` for a string that is not well-formed UTF-16.
  */
-export function encodeAssetReference(reference: string): string {
-  return encodeURIComponent(reference).replace(
-    /[!'()*_~]/g,
-    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
-  )
+export function encodeAssetReference(reference: string): string | undefined {
+  try {
+    return encodeURIComponent(reference).replace(
+      /[!'()*_~]/g,
+      (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+    )
+  } catch {
+    return undefined
+  }
 }
 
 /** Decodes a CAIP-19 asset reference; `undefined` for a malformed `%` sequence. */

@@ -555,9 +555,10 @@ function isHexTxHash(hash: string): boolean {
 }
 
 /**
- * Canonical transaction-hash representation for replay-store keys. EVM and
- * Bitcoin-family hashes compare case-insensitively and ignore the optional
- * `0x` prefix; base58 and all other chain-native formats remain byte-for-byte
+ * Canonical transaction-hash representation for replay-store keys. Hashes on
+ * hexadecimal-hash chains (EVM, Bitcoin family, Tron, Aptos, Starknet,
+ * Stellar, XRPL) compare case-insensitively and ignore the optional `0x`
+ * prefix; base58 and all other chain-native formats remain byte-for-byte
  * exact. When `network` is omitted, an all-hex shape is treated as hex for
  * status matching compatibility.
  */
@@ -709,7 +710,7 @@ export function createAssetMap(tokens: TokenInfo[], config: Config = {}): AssetM
         const namespace = Types.parseCaip2(caip2Id).namespace
         const assetNamespace = contractAssetNamespaces[namespace] ?? 'token'
         const reference = Types.encodeAssetReference(token.contractAddress)
-        if (reference.length > 128) return undefined
+        if (reference === undefined || reference.length > 128) return undefined
         return `${caip2Id}/${assetNamespace}:${reference}`
       }
       const coinType = nativeCoinTypes[token.blockchain]

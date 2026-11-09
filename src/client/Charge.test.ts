@@ -192,6 +192,19 @@ describe('built-in EVM deposit broadcast', () => {
     )
   })
 
+  test('erc20 origin: a percent-encoded token reference is paid to the decoded contract', async () => {
+    const { wallet, sent } = fakeWallet()
+    const method = charge({ walletClient: wallet })
+    await createCredential(
+      method,
+      makeChallenge({
+        ...arbitrumUsdcRequest,
+        currency: 'eip155:42161/erc20:%30xaf88d065e77c8cc2239327c5edb3a432268e5831',
+      }),
+    )
+    expect(sent[0]!.to).toBe('0xaf88d065e77c8cc2239327c5edb3a432268e5831')
+  })
+
   test('native (slip44) origin: value transfer to the deposit address', async () => {
     const { wallet, sent } = fakeWallet({ chainId: 1 })
     const method = charge({ walletClient: wallet })

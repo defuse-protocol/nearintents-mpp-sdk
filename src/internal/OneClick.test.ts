@@ -485,9 +485,10 @@ describe('createAssetMap (CAIP-19 ↔ 1Click asset ids)', () => {
       ),
     ).toBe('nep141:sui-c1b81ecaf27933252d31a963bc5e9458f13c18ce.omft.near')
     expect(map.toAssetId('sui:mainnet/token:0xab%ZZ')).toBeUndefined()
+    expect(map.toAssetId('tron:728126428/slip44:%31%39%35')).toBe('nep141:tron.omft.near')
   })
 
-  test('toCaip19 returns undefined once the encoded reference exceeds 128 characters', () => {
+  test('toCaip19 returns undefined for references it cannot render', () => {
     const token = (contractAddress: string): OneClick.TokenInfo => ({
       assetId: contractAddress,
       decimals: 0,
@@ -497,9 +498,11 @@ describe('createAssetMap (CAIP-19 ↔ 1Click asset ids)', () => {
     })
     const atLimit = `0x${'a'.repeat(123)}_`
     const overLimit = `0x${'a'.repeat(124)}_`
-    const long = OneClick.createAssetMap([token(atLimit), token(overLimit)])
+    const loneSurrogate = '0xab\ud800'
+    const long = OneClick.createAssetMap([token(atLimit), token(overLimit), token(loneSurrogate)])
     expect(long.toCaip19(atLimit)).toBe(`sui:mainnet/token:0x${'a'.repeat(123)}%5F`)
     expect(long.toCaip19(overLimit)).toBeUndefined()
+    expect(long.toCaip19(loneSurrogate)).toBeUndefined()
   })
 
   test('merchant config repeating the new defaults keeps working', () => {

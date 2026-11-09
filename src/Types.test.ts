@@ -63,6 +63,13 @@ describe('CAIP-2 / CAIP-19 helpers', () => {
     ).toBe(false)
   })
 
+  test('encodeAssetReference escapes everything outside [-.a-zA-Z0-9]', () => {
+    expect(Types.encodeAssetReference("a-b.C9!'()*~é_%/:")).toBe(
+      'a-b.C9%21%27%28%29%2A%7E%C3%A9%5F%25%2F%3A',
+    )
+    expect(Types.encodeAssetReference('ab\ud800')).toBeUndefined()
+  })
+
   test('assetEqual compares percent-decoded references', () => {
     expect(
       Types.assetEqual('sui:mainnet/token:0xab%3a%3ausdc', 'sui:mainnet/token:0xab%3A%3Ausdc'),
