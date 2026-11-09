@@ -264,7 +264,8 @@ async function broadcastEvmDeposit(
     const data =
       `0xa9059cbb${recipient.slice(2).toLowerCase().padStart(64, '0')}${amount.toString(16).padStart(64, '0')}` as `0x${string}`
     return walletClient.sendTransaction({
-      to: currency.assetReference as `0x${string}`,
+      to: (Types.decodeAssetReference(currency.assetReference) ??
+        currency.assetReference) as `0x${string}`,
       data,
     })
   })()

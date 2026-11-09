@@ -9,7 +9,7 @@ import { createServer, type TestServer } from './Http.js'
  * never call live 1Click from the suite.
  */
 
-/** Real-shaped token entries (mirrors live `/v0/tokens` data as of 2026-07). */
+/** Real-shaped token entries (mirrors live `/v0/tokens` data as of 2026-07 and 2026-11). */
 export const defaultTokens: TokenInfo[] = [
   {
     assetId: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near',
@@ -43,6 +43,74 @@ export const defaultTokens: TokenInfo[] = [
     blockchain: 'near',
     symbol: 'wNEAR',
     contractAddress: 'wrap.near',
+  },
+  {
+    assetId: 'nep141:itlx.intellex_xyz.near',
+    decimals: 24,
+    blockchain: 'near',
+    symbol: 'ITLX',
+    contractAddress: 'itlx.intellex_xyz.near',
+  },
+  {
+    assetId: 'nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near',
+    decimals: 6,
+    blockchain: 'tron',
+    symbol: 'USDT',
+    contractAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+  },
+  {
+    assetId: 'nep141:tron.omft.near',
+    decimals: 6,
+    blockchain: 'tron',
+    symbol: 'TRX',
+  },
+  {
+    assetId: 'nep141:aptos-88cb7619440a914fe6400149a12b443c3ac21d59.omft.near',
+    decimals: 6,
+    blockchain: 'aptos',
+    symbol: 'USDT',
+    contractAddress: '0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b',
+  },
+  {
+    assetId:
+      '1cs_v1:aptos:aptos-fa:0x261c85bc1bb5acc3ffcf769530c732d4182c3bbd84936d427125fcd4732e9879',
+    decimals: 8,
+    blockchain: 'aptos',
+    symbol: 'ZEC',
+    contractAddress: '0x261c85bc1bb5acc3ffcf769530c732d4182c3bbd84936d427125fcd4732e9879',
+  },
+  {
+    assetId: 'nep141:aptos.omft.near',
+    decimals: 8,
+    blockchain: 'aptos',
+    symbol: 'APT',
+  },
+  {
+    assetId: 'nep141:starknet.omft.near',
+    decimals: 18,
+    blockchain: 'starknet',
+    symbol: 'STRK',
+  },
+  {
+    assetId: 'nep141:sui-c1b81ecaf27933252d31a963bc5e9458f13c18ce.omft.near',
+    decimals: 6,
+    blockchain: 'sui',
+    symbol: 'USDC',
+    contractAddress:
+      '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
+  },
+  {
+    assetId: 'nep245:v2_1.omni.hot.tg:1117_3tsdfyziyc7EJbP2aULWSKU4toBaAcN4FdTgfm5W1mC4ouR',
+    decimals: 6,
+    blockchain: 'ton',
+    symbol: 'USDT',
+    contractAddress: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
+  },
+  {
+    assetId: 'nep245:v2_1.omni.hot.tg:1117_',
+    decimals: 9,
+    blockchain: 'ton',
+    symbol: 'GRAM',
   },
 ]
 
