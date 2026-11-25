@@ -20,6 +20,11 @@ import * as Types from '../Types.js'
  *    `eip155:*` origins (native transfers and ERC-20 `transfer`); any viem
  *    WalletClient extended with public actions satisfies the interface.
  *
+ * A method instance pays each deposit address (and memo) at most once: a
+ * later challenge for the same address re-presents the first deposit's hash.
+ * After a non-success terminal, the server's retry challenge can still carry
+ * the spent quote, which mppx's fetch would otherwise pay again.
+ *
  * @example
  * ```ts
  * import { Mppx } from 'mppx/client'
@@ -40,6 +45,10 @@ import * as Types from '../Types.js'
  * ```
  */
 export function charge(parameters: charge.Parameters = {}) {
+  // ponytail: in-memory and per instance, one entry per paid deposit; persist or
+  // expire entries if a long-lived client must survive restarts or pays at volume.
+  const deposits = new Map<string, Promise<string>>()
+
   return Method.toClient(Methods.charge, {
     context: z.object({
       /** Tx hash of an already-broadcast deposit (push mode, bring-your-own-broadcast). */
@@ -70,13 +79,26 @@ export function charge(parameters: charge.Parameters = {}) {
       assertPolicy(parameters.policy, request)
 
       const walletClient = context?.walletClient ?? parameters.walletClient
-      const hash = await (async () => {
+      const hash = await (() => {
         if (context?.hash) return context.hash
-        if (parameters.sendDeposit) return parameters.sendDeposit({ challenge, request })
-        if (walletClient) return broadcastEvmDeposit(walletClient, request)
-        throw new Error(
-          'nearintents-mpp-sdk: no way to pay — provide context.hash, a sendDeposit callback, or a walletClient.',
-        )
+        const key = JSON.stringify([
+          request.methodDetails.originNetwork,
+          request.recipient,
+          request.methodDetails.depositMemo ?? null,
+        ])
+        const paid = deposits.get(key)
+        if (paid) return paid
+        const deposit = (async () => {
+          if (parameters.sendDeposit) return parameters.sendDeposit({ challenge, request })
+          if (walletClient) return broadcastEvmDeposit(walletClient, request)
+          throw new Error(
+            'nearintents-mpp-sdk: no way to pay — provide context.hash, a sendDeposit callback, or a walletClient.',
+          )
+        })()
+        deposits.set(key, deposit)
+        // Forget a failed deposit so a broadcast error can be retried.
+        deposit.catch(() => deposits.delete(key))
+        return deposit
       })()
 
       const source =

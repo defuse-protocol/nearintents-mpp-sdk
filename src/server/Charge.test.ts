@@ -1,4 +1,5 @@
 import { Challenge, Receipt, Store } from 'mppx'
+import { Mppx as ClientMppx } from 'mppx/client'
 import { Mppx } from 'mppx/server'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
@@ -490,5 +491,54 @@ describe('expired challenges', () => {
     const result = await handler(new Request(URL_, { headers: { authorization } }))
     const { body } = await problemOf(result)
     expect(body.type).toBe('https://paymentauth.org/problems/payment-expired')
+  })
+})
+
+describe("mppx's client fetch loop never pays a deposit address twice", () => {
+  /** An mppx client whose fetch reaches `handler`, recording every deposit it makes. */
+  function payingClient(handler: Handler, onDeposit?: () => void) {
+    const deposits: string[] = []
+    const client = ClientMppx.create({
+      polyfill: false,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const result = await handler(new Request(input, init))
+        if (result.status === 402) return result.challenge
+        return result.withReceipt(Response.json({ ok: true }))
+      }) as typeof globalThis.fetch,
+      methods: [
+        clientCharge({
+          sendDeposit: async ({ request }) => {
+            deposits.push(request.recipient)
+            onDeposit?.()
+            return `0x${String(deposits.length).padStart(64, '0')}`
+          },
+        }),
+      ],
+    })
+    return { client, deposits }
+  }
+
+  test('a refunded deposit is not paid again; the payer settles on a fresh quote', async () => {
+    const { handler } = await setup()
+    mock.script({ outcome: 'REFUNDED' })
+    const { client, deposits } = payingClient(handler)
+
+    let response = await client.fetch(URL_)
+    // mppx ≥ 0.22 stops at the invalid-challenge answer; the next request recovers.
+    if (response.status !== 200) response = await client.fetch(URL_)
+
+    expect(response.status).toBe(200)
+    expect(deposits).toHaveLength(2)
+    expect(new Set(deposits).size).toBe(2)
+  })
+
+  test('a deposit interrupted by a 1Click outage is re-presented, not paid again', async () => {
+    const { handler } = await setup({ settlementTimeout: 0.2, pollInterval: 20 })
+    const { client, deposits } = payingClient(handler, () => mock.failNextRequests(1000))
+
+    expect((await client.fetch(URL_)).status).toBe(503)
+    mock.failNextRequests(0)
+    expect((await client.fetch(URL_)).status).toBe(200)
+    expect(deposits).toHaveLength(1)
   })
 })
