@@ -1,7 +1,7 @@
 import { Challenge, Credential } from 'mppx'
 import { describe, expect, test } from 'vitest'
 
-import { arbitrumUsdcRequest, makeChallenge, secretKey } from '../../test/vectors.js'
+import { arbitrumUsdcRequest, btcRequest, makeChallenge, secretKey } from '../../test/vectors.js'
 import type * as Types from '../Types.js'
 import { charge } from './Charge.js'
 
@@ -265,5 +265,48 @@ describe('sendDeposit callback (bring-your-own-chain)', () => {
 
     expect(seen?.recipient).toBe(btcRequest.recipient)
     expect(Credential.deserialize<Types.HashPayload>(header).payload.hash).toBe('btc-txid-abc')
+  })
+})
+
+describe('each deposit address is paid at most once', () => {
+  const hashOf = (header: string) => Credential.deserialize<Types.HashPayload>(header).payload.hash
+
+  test('a later challenge for a paid address re-presents its hash', async () => {
+    const { wallet, sent } = fakeWallet()
+    const method = charge({ walletClient: wallet })
+    const first = await createCredential(method, makeChallenge(arbitrumUsdcRequest))
+    const second = await createCredential(method, makeChallenge(arbitrumUsdcRequest))
+
+    expect(sent).toHaveLength(1)
+    expect(hashOf(second)).toBe(hashOf(first))
+  })
+
+  test('concurrent challenges for one address share a single deposit', async () => {
+    const { wallet, sent } = fakeWallet()
+    const method = charge({ walletClient: wallet })
+    await Promise.all([
+      createCredential(method, makeChallenge(arbitrumUsdcRequest)),
+      createCredential(method, makeChallenge(arbitrumUsdcRequest)),
+    ])
+    expect(sent).toHaveLength(1)
+  })
+
+  test('another memo is another deposit, and a failed deposit stays payable', async () => {
+    let calls = 0
+    const method = charge({
+      sendDeposit: async ({ request }) => {
+        calls++
+        if (calls === 1) throw new Error('broadcast failed')
+        return `txid-${request.methodDetails.depositMemo}`
+      },
+    })
+    const withMemo = (depositMemo: string) =>
+      makeChallenge({ ...btcRequest, methodDetails: { ...btcRequest.methodDetails, depositMemo } })
+
+    await expect(createCredential(method, withMemo('a'))).rejects.toThrow(/broadcast failed/)
+    expect(hashOf(await createCredential(method, withMemo('a')))).toBe('txid-a')
+    expect(hashOf(await createCredential(method, withMemo('b')))).toBe('txid-b')
+    expect(hashOf(await createCredential(method, withMemo('a')))).toBe('txid-a')
+    expect(calls).toBe(3)
   })
 })
