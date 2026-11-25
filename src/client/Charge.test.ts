@@ -1,5 +1,5 @@
 import { Challenge, Credential } from 'mppx'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
 import { arbitrumUsdcRequest, btcRequest, makeChallenge, secretKey } from '../../test/vectors.js'
 import type * as Types from '../Types.js'
@@ -363,5 +363,28 @@ describe('each deposit address is paid at most once', () => {
     expect(hashOf(await createCredential(method, makeChallenge(arbitrumUsdcRequest)))).toBe(
       minedHash,
     )
+  })
+
+  test('a deposit is forgotten 24 hours after the latest expires of a challenge for it', async () => {
+    vi.useFakeTimers()
+    try {
+      const day = 24 * 60 * 60 * 1000
+      const expiresIn = 10 * 60 * 1000 // makeChallenge's default window
+      const { wallet, sent } = fakeWallet()
+      const method = charge({ walletClient: wallet })
+      await createCredential(method, makeChallenge(arbitrumUsdcRequest))
+
+      // Just before the first challenge's expires + 24 h: still remembered, and refreshed.
+      vi.advanceTimersByTime(expiresIn + day - 1000)
+      await createCredential(method, makeChallenge(arbitrumUsdcRequest))
+      expect(sent).toHaveLength(1)
+
+      // Past the refreshed limit: forgotten, so the address is paid again.
+      vi.advanceTimersByTime(expiresIn + day + 1000)
+      await createCredential(method, makeChallenge(arbitrumUsdcRequest))
+      expect(sent).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -3,6 +3,8 @@ import { Credential, Errors, Expires, Method, z } from 'mppx'
 import * as Methods from '../Methods.js'
 import * as Types from '../Types.js'
 
+const forgetAfterMs = 24 * 60 * 60 * 1000
+
 /**
  * Creates a `nearintents` charge method for usage on the client.
  *
@@ -27,7 +29,8 @@ import * as Types from '../Types.js'
  * again. The payer is the wallet's account for the built-in broadcast and the
  * instance itself for `sendDeposit`; a wallet without an account address is
  * not tracked. This holds only within one instance, so keep one for the life
- * of the payer's session.
+ * of the payer's session. A deposit is forgotten 24 hours after the latest
+ * `expires` of a challenge for it, long after any quote for it has expired.
  *
  * @example
  * ```ts
@@ -49,9 +52,9 @@ import * as Types from '../Types.js'
  * ```
  */
 export function charge(parameters: charge.Parameters = {}) {
-  // ponytail: in-memory and per instance, one entry per paid deposit; persist or
-  // expire entries if a long-lived client must survive restarts or pays at volume.
-  const deposits = new Map<string, Promise<string>>()
+  // ponytail: in-memory and per instance; persist it if a client must survive restarts.
+  const deposits = new Map<string, { hash: Promise<string>; until: number }>()
+  let nextSweep = 0
 
   return Method.toClient(Methods.charge, {
     context: z.object({
@@ -95,23 +98,33 @@ export function charge(parameters: charge.Parameters = {}) {
         const payer = parameters.sendDeposit ? '' : walletClient?.account?.address.toLowerCase()
         if (payer === undefined) return pay()
 
+        const now = Date.now()
+        if (now >= nextSweep) {
+          for (const [entryKey, entry] of deposits)
+            if (entry.until <= now) deposits.delete(entryKey)
+          nextSweep = now + 60_000
+        }
+
         const key = JSON.stringify([
           payer,
           request.methodDetails.originNetwork,
           request.recipient,
           request.methodDetails.depositMemo ?? null,
         ])
+        const until = Math.max(now, Date.parse(challenge.expires ?? '') || now) + forgetAfterMs
         const paid = deposits.get(key)
-        if (paid) return paid
-        const deposit = pay()
-        deposits.set(key, deposit)
+        if (paid && paid.until > now) {
+          paid.until = Math.max(paid.until, until)
+          return paid.hash
+        }
+        const entry = { hash: pay(), until }
+        deposits.set(key, entry)
         // Keep a sent deposit's hash; forget anything else so it can be retried.
-        deposit.catch((error) => {
-          if (error instanceof DepositUnconfirmedError)
-            deposits.set(key, Promise.resolve(error.hash))
-          else deposits.delete(key)
+        entry.hash.catch((error) => {
+          if (error instanceof DepositUnconfirmedError) entry.hash = Promise.resolve(error.hash)
+          else if (deposits.get(key) === entry) deposits.delete(key)
         })
-        return deposit
+        return entry.hash
       })()
 
       const source =

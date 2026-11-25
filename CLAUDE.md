@@ -70,7 +70,8 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
    echoes the just-spent quote, and mppx's client fetch pays it automatically.
    The client method therefore pays each deposit address (+ memo) at most once
    per payer and method instance, re-presenting the first hash (also after a
-   sent deposit whose confirmation wait failed); the server answers
+   sent deposit whose confirmation wait failed) until 24 h after the latest
+   challenge `expires` for that deposit; the server answers
    `invalid-challenge`. mppx 0.17 clients then pay the fresh challenge in the
    same fetch; mppx ≥ 0.22 clients stop there and the caller's next request
    gets a fresh quote (the cache pointer is dropped on terminal). Covered by
