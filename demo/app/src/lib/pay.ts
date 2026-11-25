@@ -64,6 +64,10 @@ export async function probe(
   }
 }
 
+// One client for the page: its method remembers the deposits each wallet made,
+// so a retry re-presents a deposit instead of paying its address again.
+const mppx = Mppx.create({ methods: [charge({ policy })], polyfill: false })
+
 /**
  * Pays the resource through the package's client method: either presenting an
  * already-broadcast tx hash, or broadcasting via the connected EVM wallet.
@@ -75,14 +79,11 @@ export async function pay(
     walletClient?: charge.EvmWalletClient | undefined
   },
 ): Promise<PayOutcome> {
-  const method = charge({
-    policy,
-    ...(options.walletClient && { walletClient: options.walletClient }),
-  })
-  const mppx = Mppx.create({ methods: [method], polyfill: false })
-
   const response = await mppx.fetch(url, {
-    ...(options.hash && { context: { hash: options.hash } }),
+    context: {
+      ...(options.hash && { hash: options.hash }),
+      ...(options.walletClient && { walletClient: options.walletClient }),
+    },
   } as RequestInit)
 
   if (response.ok) {

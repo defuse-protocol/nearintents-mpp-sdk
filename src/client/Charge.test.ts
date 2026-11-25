@@ -1,5 +1,5 @@
 import { Challenge, Credential } from 'mppx'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
 import { arbitrumUsdcRequest, btcRequest, makeChallenge, secretKey } from '../../test/vectors.js'
 import type * as Types from '../Types.js'
@@ -21,7 +21,15 @@ type SentTransaction = {
   data?: string | undefined
 }
 
-function fakeWallet(options: { chainId?: number; address?: string; revert?: boolean } = {}): {
+function fakeWallet(
+  options: {
+    chainId?: number
+    address?: string
+    revert?: boolean
+    waitError?: Error
+    minedHash?: string
+  } = {},
+): {
   wallet: charge.EvmWalletClient
   sent: SentTransaction[]
 } {
@@ -34,7 +42,11 @@ function fakeWallet(options: { chainId?: number; address?: string; revert?: bool
       return HASH
     },
     async waitForTransactionReceipt() {
-      return { status: options.revert ? 'reverted' : 'success' }
+      if (options.waitError) throw options.waitError
+      return {
+        status: options.revert ? 'reverted' : 'success',
+        ...(options.minedHash && { transactionHash: options.minedHash }),
+      }
     },
   }
   return { wallet, sent }
@@ -308,5 +320,71 @@ describe('each deposit address is paid at most once', () => {
     expect(hashOf(await createCredential(method, withMemo('b')))).toBe('txid-b')
     expect(hashOf(await createCredential(method, withMemo('a')))).toBe('txid-a')
     expect(calls).toBe(3)
+  })
+
+  test('payers sharing one instance each pay their own deposit', async () => {
+    const a = fakeWallet({ address: '0x000000000000000000000000000000000000000A' })
+    const b = fakeWallet({ address: '0x000000000000000000000000000000000000000B' })
+    const method = charge()
+    await createCredential(method, makeChallenge(arbitrumUsdcRequest), { walletClient: a.wallet })
+    await createCredential(method, makeChallenge(arbitrumUsdcRequest), { walletClient: b.wallet })
+    expect(a.sent).toHaveLength(1)
+    expect(b.sent).toHaveLength(1)
+
+    // Without an account address the payer is unknown, so nothing is remembered.
+    const anonymous = fakeWallet()
+    const untracked = charge({ walletClient: { ...anonymous.wallet, account: undefined } })
+    await createCredential(untracked, makeChallenge(arbitrumUsdcRequest))
+    await createCredential(untracked, makeChallenge(arbitrumUsdcRequest))
+    expect(anonymous.sent).toHaveLength(2)
+  })
+
+  test('a sent deposit whose confirmation fails is presented again; a reverted one is paid again', async () => {
+    const unconfirmed = fakeWallet({ waitError: new Error('timed out') })
+    const method = charge({ walletClient: unconfirmed.wallet })
+    await expect(createCredential(method, makeChallenge(arbitrumUsdcRequest))).rejects.toThrow(
+      /broadcast but its confirmation failed/,
+    )
+    expect(hashOf(await createCredential(method, makeChallenge(arbitrumUsdcRequest)))).toBe(HASH)
+    expect(unconfirmed.sent).toHaveLength(1)
+
+    const reverting = fakeWallet({ revert: true })
+    const retried = charge({ walletClient: reverting.wallet })
+    for (let attempt = 0; attempt < 2; attempt++)
+      await expect(createCredential(retried, makeChallenge(arbitrumUsdcRequest))).rejects.toThrow(
+        /reverted/,
+      )
+    expect(reverting.sent).toHaveLength(2)
+  })
+
+  test('the hash of the mined transaction is presented after a wallet speed-up', async () => {
+    const minedHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
+    const method = charge({ walletClient: fakeWallet({ minedHash }).wallet })
+    expect(hashOf(await createCredential(method, makeChallenge(arbitrumUsdcRequest)))).toBe(
+      minedHash,
+    )
+  })
+
+  test('a deposit is forgotten 24 hours after the latest expires of a challenge for it', async () => {
+    vi.useFakeTimers()
+    try {
+      const day = 24 * 60 * 60 * 1000
+      const expiresIn = 10 * 60 * 1000 // makeChallenge's default window
+      const { wallet, sent } = fakeWallet()
+      const method = charge({ walletClient: wallet })
+      await createCredential(method, makeChallenge(arbitrumUsdcRequest))
+
+      // Just before the first challenge's expires + 24 h: still remembered, and refreshed.
+      vi.advanceTimersByTime(expiresIn + day - 1000)
+      await createCredential(method, makeChallenge(arbitrumUsdcRequest))
+      expect(sent).toHaveLength(1)
+
+      // Past the refreshed limit: forgotten, so the address is paid again.
+      vi.advanceTimersByTime(expiresIn + day + 1000)
+      await createCredential(method, makeChallenge(arbitrumUsdcRequest))
+      expect(sent).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
