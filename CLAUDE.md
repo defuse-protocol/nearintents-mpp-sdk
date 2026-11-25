@@ -69,10 +69,13 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
    `verify` runs, so the 402 returned immediately after a non-success terminal
    echoes the just-spent quote, and mppx's client fetch pays it automatically.
    The client method therefore pays each deposit address (+ memo) at most once
-   and re-presents the first hash; the server answers `invalid-challenge`, and
-   a fresh challenge follows (the cache pointer is dropped on terminal).
-   Covered by the client-fetch-loop tests. An upstream mppx hook to re-resolve
-   the retry challenge post-verify would remove the echo.
+   per payer and method instance, re-presenting the first hash (also after a
+   sent deposit whose confirmation wait failed); the server answers
+   `invalid-challenge`. mppx 0.17 clients then pay the fresh challenge in the
+   same fetch; mppx ≥ 0.22 clients stop there and the caller's next request
+   gets a fresh quote (the cache pointer is dropped on terminal). Covered by
+   the client-fetch-loop tests. An upstream mppx hook to re-resolve the retry
+   challenge post-verify would remove the echo.
 9. **Refund ownership is resolved before the wet quote:** `refundTo` accepts a
    fixed address or a per-request resolver. Prefer authenticated payer context;
    the resolved address is included in quote identity + `stableBinding`, and

@@ -495,16 +495,21 @@ describe('expired challenges', () => {
 })
 
 describe("mppx's client fetch loop never pays a deposit address twice", () => {
+  /** A fetch that reaches `handler` in-process. */
+  function serverFetch(handler: Handler) {
+    return (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const result = await handler(new Request(input, init))
+      if (result.status === 402) return result.challenge
+      return result.withReceipt(Response.json({ ok: true }))
+    }) as typeof globalThis.fetch
+  }
+
   /** An mppx client whose fetch reaches `handler`, recording every deposit it makes. */
   function payingClient(handler: Handler, onDeposit?: () => void) {
     const deposits: string[] = []
     const client = ClientMppx.create({
       polyfill: false,
-      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
-        const result = await handler(new Request(input, init))
-        if (result.status === 402) return result.challenge
-        return result.withReceipt(Response.json({ ok: true }))
-      }) as typeof globalThis.fetch,
+      fetch: serverFetch(handler),
       methods: [
         clientCharge({
           sendDeposit: async ({ request }) => {
@@ -525,11 +530,46 @@ describe("mppx's client fetch loop never pays a deposit address twice", () => {
 
     let response = await client.fetch(URL_)
     // mppx ≥ 0.22 stops at the invalid-challenge answer; the next request recovers.
-    if (response.status !== 200) response = await client.fetch(URL_)
+    if (response.status !== 200) {
+      const { type } = (await response.json()) as { type: string }
+      expect(type).toBe('https://paymentauth.org/problems/invalid-challenge')
+      response = await client.fetch(URL_)
+    }
 
     expect(response.status).toBe(200)
     expect(deposits).toHaveLength(2)
     expect(new Set(deposits).size).toBe(2)
+  })
+
+  test("payers sharing one client never settle on each other's deposit", async () => {
+    const { handler } = await setup({ settlementTimeout: 0.2, pollInterval: 20 })
+    const sent = new Map<string, string[]>()
+    const wallet = (letter: string): clientCharge.EvmWalletClient => ({
+      account: { address: `0x${letter.repeat(40)}` },
+      chain: { id: 42161 },
+      async sendTransaction() {
+        const hash = `0x${letter.repeat(64)}`
+        sent.set(letter, [...(sent.get(letter) ?? []), hash])
+        // Payer a's deposit meets a 1Click outage, so its quote stays open.
+        if (letter === 'a') mock.failNextRequests(1000)
+        return hash
+      },
+    })
+    const client = ClientMppx.create({
+      polyfill: false,
+      fetch: serverFetch(handler),
+      methods: [clientCharge()],
+    })
+
+    const first = await client.fetch(URL_, { context: { walletClient: wallet('a') } })
+    expect(first.status).toBe(503)
+    mock.failNextRequests(0)
+
+    const second = await client.fetch(URL_, { context: { walletClient: wallet('b') } })
+    expect(second.status).toBe(200)
+    expect(sent.get('b')).toHaveLength(1)
+    const receipt = Receipt.fromResponse(second) as Types.NearIntentsReceipt
+    expect(receipt.originTxHash).toBe(sent.get('b')?.[0])
   })
 
   test('a deposit interrupted by a 1Click outage is re-presented, not paid again', async () => {

@@ -20,10 +20,14 @@ import * as Types from '../Types.js'
  *    `eip155:*` origins (native transfers and ERC-20 `transfer`); any viem
  *    WalletClient extended with public actions satisfies the interface.
  *
- * A method instance pays each deposit address (and memo) at most once: a
- * later challenge for the same address re-presents the first deposit's hash.
- * After a non-success terminal, the server's retry challenge can still carry
- * the spent quote, which mppx's fetch would otherwise pay again.
+ * A method instance pays each deposit address (and memo) at most once per
+ * payer: a later challenge for the same address re-presents the first
+ * deposit's hash. After a non-success terminal, the server's retry challenge
+ * can still carry the spent quote, which mppx's fetch would otherwise pay
+ * again. The payer is the wallet's account for the built-in broadcast and the
+ * instance itself for `sendDeposit`; a wallet without an account address is
+ * not tracked. This holds only within one instance, so keep one for the life
+ * of the payer's session.
  *
  * @example
  * ```ts
@@ -81,23 +85,32 @@ export function charge(parameters: charge.Parameters = {}) {
       const walletClient = context?.walletClient ?? parameters.walletClient
       const hash = await (() => {
         if (context?.hash) return context.hash
+        const pay = async () => {
+          if (parameters.sendDeposit) return parameters.sendDeposit({ challenge, request })
+          if (walletClient) return broadcastEvmDeposit(walletClient, request)
+          throw new Error(
+            'nearintents-mpp-sdk: no way to pay — provide context.hash, a sendDeposit callback, or a walletClient.',
+          )
+        }
+        const payer = parameters.sendDeposit ? '' : walletClient?.account?.address.toLowerCase()
+        if (payer === undefined) return pay()
+
         const key = JSON.stringify([
+          payer,
           request.methodDetails.originNetwork,
           request.recipient,
           request.methodDetails.depositMemo ?? null,
         ])
         const paid = deposits.get(key)
         if (paid) return paid
-        const deposit = (async () => {
-          if (parameters.sendDeposit) return parameters.sendDeposit({ challenge, request })
-          if (walletClient) return broadcastEvmDeposit(walletClient, request)
-          throw new Error(
-            'nearintents-mpp-sdk: no way to pay — provide context.hash, a sendDeposit callback, or a walletClient.',
-          )
-        })()
+        const deposit = pay()
         deposits.set(key, deposit)
-        // Forget a failed deposit so a broadcast error can be retried.
-        deposit.catch(() => deposits.delete(key))
+        // Keep a sent deposit's hash; forget anything else so it can be retried.
+        deposit.catch((error) => {
+          if (error instanceof DepositUnconfirmedError)
+            deposits.set(key, Promise.resolve(error.hash))
+          else deposits.delete(key)
+        })
         return deposit
       })()
 
@@ -169,10 +182,18 @@ export declare namespace charge {
       data?: `0x${string}` | undefined
     }) => Promise<string>
     waitForTransactionReceipt?:
-      | ((args: { hash: `0x${string}` }) => Promise<{ status?: string | undefined }>)
+      | ((args: { hash: `0x${string}` }) => Promise<{
+          status?: string | undefined
+          transactionHash?: string | undefined
+        }>)
       | undefined
   }
 
+  /**
+   * Pays the deposit and resolves with its confirmed tx hash. Reject only when
+   * nothing was broadcast: a rejection lets the next challenge for this
+   * deposit address pay it again.
+   */
   type SendDeposit = (parameters: {
     challenge: { id: string; expires?: string | undefined }
     request: Types.ChargeRequest
@@ -181,7 +202,10 @@ export declare namespace charge {
   type Parameters = {
     /** Payment policy asserted before every deposit. */
     policy?: Policy | undefined
-    /** Pays the origin-chain leg and resolves with the confirmed tx hash. */
+    /**
+     * Pays the origin-chain leg and resolves with the confirmed tx hash. Reject
+     * only when nothing was broadcast, or the next challenge pays again.
+     */
     sendDeposit?: SendDeposit | undefined
     /** EVM wallet for the built-in `eip155:*` broadcast. */
     walletClient?: EvmWalletClient | undefined
@@ -293,13 +317,29 @@ async function broadcastEvmDeposit(
   })()
 
   // Present a *confirmed* hash when the client can wait for inclusion.
-  if (walletClient.waitForTransactionReceipt) {
-    const receipt = await walletClient.waitForTransactionReceipt({
-      hash: hash as `0x${string}`,
-    })
-    if (receipt.status && receipt.status !== 'success')
-      throw new Error(`nearintents-mpp-sdk: deposit transaction ${hash} reverted.`)
+  if (!walletClient.waitForTransactionReceipt) return hash
+  let receipt: { status?: string | undefined; transactionHash?: string | undefined }
+  try {
+    receipt = await walletClient.waitForTransactionReceipt({ hash: hash as `0x${string}` })
+  } catch (error) {
+    throw new DepositUnconfirmedError(hash, error)
   }
+  if (receipt.status && receipt.status !== 'success')
+    throw new Error(`nearintents-mpp-sdk: deposit transaction ${hash} reverted.`)
+  // A wallet speed-up mines a replacement under a new hash.
+  return receipt.transactionHash ?? hash
+}
 
-  return hash
+/** @internal The deposit was broadcast, but waiting for its confirmation failed. */
+class DepositUnconfirmedError extends Error {
+  override readonly name = 'DepositUnconfirmedError'
+  readonly hash: string
+
+  constructor(hash: string, cause: unknown) {
+    super(
+      `nearintents-mpp-sdk: deposit ${hash} was broadcast but its confirmation failed; retrying presents it again.`,
+      { cause },
+    )
+    this.hash = hash
+  }
 }
