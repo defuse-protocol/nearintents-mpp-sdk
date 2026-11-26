@@ -225,6 +225,15 @@ The normative wire contract is
 [`test/vectors.test.ts`](test/vectors.test.ts) are generated through mppx
 primitives from the spec's examples.
 
+### Deviations from draft-01 (pending a spec update)
+
+- A `SUCCESS` status without swap evidence (an output amount and at least one
+  intent hash) is refused with `payment-insufficient`: 1Click can report
+  `SUCCESS` for a deposit it never swapped. The deposit is spent and its hash
+  consumed, since a retry can never succeed.
+- The receipt `reference` is the destination-chain transaction hash, or the
+  NEAR intent hash when 1Click reports none.
+
 ## Development
 
 ```sh

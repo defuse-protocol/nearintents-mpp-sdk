@@ -51,7 +51,7 @@ describe('endpoints', () => {
       slippageTolerance: 100,
     })
 
-    expect(result.quote.depositAddress).toBe('mock-deposit-1')
+    expect(result.quote.depositAddress).toBe('0x0000000000000000000000000000000000000001')
     // Mock pricing: minAmountIn = amountOut (1:1), amountIn adds 100 bps.
     expect(result.quote.minAmountIn).toBe('1000000')
     expect(result.quote.amountIn).toBe('1010000')

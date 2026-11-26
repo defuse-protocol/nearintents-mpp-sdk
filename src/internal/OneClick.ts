@@ -146,11 +146,15 @@ export type SwapDetails = {
   destinationChainTxHashes?: TransactionDetails[] | undefined
   intentHashes?: string[] | undefined
   nearTxHashes?: string[] | undefined
-  amountIn?: string | undefined
-  amountOut?: string | undefined
+  /** Written only when a swap happens; `null` otherwise. */
+  amountIn?: string | null | undefined
+  /** Written only when a swap happens; `null` otherwise. */
+  amountOut?: string | null | undefined
   depositedAmount?: string | undefined
   refundedAmount?: string | undefined
-  refundReason?: string | undefined
+  refundFee?: string | undefined
+  /** Returned only on `REFUNDED`; `null` otherwise. */
+  refundReason?: string | null | undefined
 }
 
 export type StatusResult = {
@@ -223,9 +227,16 @@ async function request<result>(
     })
   }
 
-  const body = await response.json().catch(() => undefined)
+  let body: unknown
+  let parsed = true
+  try {
+    body = await response.json()
+  } catch {
+    parsed = false
+  }
 
-  if (response.status >= 500)
+  // Rate limiting (429) and request timeouts (408) are as transient as a 5xx.
+  if (response.status >= 500 || response.status === 429 || response.status === 408)
     throw new OneClickUnavailableError(
       `1Click returned ${response.status} for ${init.method} ${path}`,
       { status: response.status, body },
@@ -234,6 +245,11 @@ async function request<result>(
     throw new OneClickError(
       `1Click returned ${response.status} for ${init.method} ${path}: ${detailOf(body)}`,
       { status: response.status, body },
+    )
+  if (!parsed)
+    throw new OneClickUnavailableError(
+      `1Click returned an unparseable ${response.status} body for ${init.method} ${path}`,
+      { status: response.status },
     )
 
   return body as result
@@ -513,9 +529,24 @@ export function terminalError(result: StatusResult): Errors.PaymentError | undef
   }
 }
 
-/** Extracts the destination-chain delivery tx hash (the receipt `reference`). */
+/** Extracts the destination-chain delivery tx hash. */
 export function destinationTxHash(result: StatusResult): string | undefined {
   return result.swapDetails?.destinationChainTxHashes?.[0]?.hash
+}
+
+/**
+ * Whether a `SUCCESS` status reflects a swap. 1Click can report `SUCCESS`
+ * without one (no payout); only a real swap sets `amountOut` and records
+ * intent hashes.
+ */
+export function swapped(result: StatusResult): boolean {
+  const details = result.swapDetails
+  return details?.amountOut != null && (details.intentHashes?.length ?? 0) > 0
+}
+
+/** The receipt `reference`: the destination-chain delivery tx hash, else the NEAR intent hash. */
+export function settlementReference(result: StatusResult): string | undefined {
+  return destinationTxHash(result) ?? result.swapDetails?.intentHashes?.[0]
 }
 
 /**

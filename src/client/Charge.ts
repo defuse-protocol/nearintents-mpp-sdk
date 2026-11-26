@@ -4,6 +4,7 @@ import * as Methods from '../Methods.js'
 import * as Types from '../Types.js'
 
 const forgetAfterMs = 24 * 60 * 60 * 1000
+const evmAddress = /^0x[0-9a-fA-F]{40}$/
 
 /**
  * Creates a `nearintents` charge method for usage on the client.
@@ -311,8 +312,23 @@ async function broadcastEvmDeposit(
       `nearintents-mpp-sdk: wallet is on chain ${walletClient.chain?.id ?? 'unknown'} but the challenge origin is eip155:${expectedChainId}.`,
     )
 
+  // The calldata below is hand-encoded: every field must fit its ABI slot.
   const amount = BigInt(request.amount)
+  if (!evmAddress.test(request.recipient))
+    throw new Error(
+      `nearintents-mpp-sdk: deposit address ${request.recipient} is not a 20-byte EVM address.`,
+    )
+  if (amount >= 2n ** 256n)
+    throw new Error(`nearintents-mpp-sdk: amount ${request.amount} does not fit in a uint256.`)
   const recipient = request.recipient as `0x${string}`
+  const token = Types.decodeAssetReference(currency.assetReference)
+  if (
+    currency.assetNamespace !== 'slip44' &&
+    (currency.assetNamespace !== 'erc20' || !token || !evmAddress.test(token))
+  )
+    throw new Error(
+      `nearintents-mpp-sdk: the built-in wallet broadcast pays native coins (slip44) and erc20 tokens at a 20-byte address only (got ${request.currency}).`,
+    )
 
   // account/chain are intentionally omitted — the wallet's own defaults apply
   // (and the chain-id assertion above already pinned the network).
@@ -322,11 +338,7 @@ async function broadcastEvmDeposit(
     // ERC-20 transfer(address,uint256) calldata — 0xa9059cbb + padded args.
     const data =
       `0xa9059cbb${recipient.slice(2).toLowerCase().padStart(64, '0')}${amount.toString(16).padStart(64, '0')}` as `0x${string}`
-    return walletClient.sendTransaction({
-      to: (Types.decodeAssetReference(currency.assetReference) ??
-        currency.assetReference) as `0x${string}`,
-      data,
-    })
+    return walletClient.sendTransaction({ to: token as `0x${string}`, data })
   })()
 
   // Present a *confirmed* hash when the client can wait for inclusion.
