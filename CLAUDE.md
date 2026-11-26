@@ -99,7 +99,10 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
 - `POST /v0/quote` with `dry: false`, `swapType: EXACT_OUTPUT`, and either a
   fixed or payer-resolved origin-chain `refundTo` → unique
   single-use `depositAddress`, `amountIn` (= challenge `amount`),
-  `minAmountIn`, `deadline`, `timeEstimate`, `depositMemo?`. Every quote the
+  `minAmountIn`, `deadline`, `timeEstimate`, `depositMemo?`. The response
+  `deadline` can be later than the requested one, but 1Click enforces the
+  requested `quoteRequest.deadline` (a deposit after it is refunded), so a
+  quote is never issued past the earlier of the two. Every quote the
   server method mints carries `referral: "mpp"` (distribution-channel
   attribution, mirrors the x402 gateway; override via `charge({ referral })`).
 - `POST /v0/deposit/submit` `{txHash, depositAddress}` after verification —
@@ -107,8 +110,11 @@ cite it. The dev plan is `DEVPLAN-nearintents-mpp-sdk-v1.md` at the repo root.
 - `GET /v0/status/{depositAddress}` → terminal: `SUCCESS | FAILED | REFUNDED |
   INCOMPLETE_DEPOSIT`. Match `payload.hash` against
   `swapDetails.originChainTxHashes` (status-observation is the v1 deposit
-  confirmation — no per-chain RPC); receipt `reference` =
-  `swapDetails.destinationChainTxHashes[0]`.
+  confirmation — no per-chain RPC). `SUCCESS` alone does not prove a swap: a
+  no-payout `SUCCESS` has `amountOut: null` and no `intentHashes`; both are
+  required before a receipt (otherwise `payment-insufficient`). Receipt
+  `reference` = `destinationChainTxHashes[0]`, else `intentHashes[0]`; never
+  `nearTxHashes`, which can hold a bridge mint of unrelated dust.
 - Wire uses CAIP-19; 1Click uses `nep141:…` asset ids. Mapping is token-list
   driven (`GET /v0/tokens`) in `internal/OneClick.ts`; compare CAIP-19 by
   parsed components (EVM addresses case-insensitively).

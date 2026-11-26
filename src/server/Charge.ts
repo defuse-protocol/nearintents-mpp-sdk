@@ -171,7 +171,8 @@ export function charge(parameters: charge.Parameters) {
         deposit &&
         deposit.state === 'active' &&
         deposit.identity === identity &&
-        Date.parse(deposit.deadline) > Date.now() + expiresWindowMs
+        deposit.issueUntil !== undefined &&
+        Date.parse(deposit.issueUntil) > Date.now() + expiresWindowMs
       ) {
         emit({ type: 'quote.reused', depositAddress: deposit.request.recipient })
         return deposit.request
@@ -197,12 +198,19 @@ export function charge(parameters: charge.Parameters) {
       referral,
     })
 
-    // Spec §Expiry: `expires` MUST be at or before the quote deadline. The
-    // backend's deadline is authoritative; if it cannot cover the route's
-    // static expires window, the route is misconfigured — fail loud.
-    if (Date.parse(quote.deadline) <= Date.now() + expiresWindowMs)
+    // 1Click refunds deposits made after the requested deadline, even when
+    // the response's `deadline` is later, so neither may be exceeded.
+    const issueUntil =
+      Date.parse(quote.deadline) < Date.parse(requestedDeadline)
+        ? quote.deadline
+        : requestedDeadline
+
+    // Spec §Expiry: `expires` MUST be at or before the quote deadline. If the
+    // deadline cannot cover the route's static expires window, the route is
+    // misconfigured — fail loud.
+    if (Date.parse(issueUntil) <= Date.now() + expiresWindowMs)
       throw new Error(
-        `nearintents-mpp-sdk: 1Click quote deadline (${quote.deadline}) does not cover the route's expires window (${expiresWindowMs / 1000}s) — lower expiresWindow or raise quoteDeadlineBuffer.`,
+        `nearintents-mpp-sdk: 1Click quote deadline (${issueUntil}) does not cover the route's expires window (${expiresWindowMs / 1000}s) — lower expiresWindow or raise quoteDeadlineBuffer.`,
       )
 
     const request: Types.ChargeRequest = {
@@ -231,6 +239,7 @@ export function charge(parameters: charge.Parameters) {
       identity,
       request,
       deadline: quote.deadline,
+      issueUntil,
       timeEstimate: quote.timeEstimate,
       depositMemo: quote.depositMemo ?? null,
       state: 'active',
@@ -455,14 +464,16 @@ export function charge(parameters: charge.Parameters) {
         })
 
         if (status.status === 'SUCCESS') {
-          const reference =
-            OneClick.destinationTxHash(status) ?? status.swapDetails?.nearTxHashes?.[0]
-          // The merchant has been paid at this point; a missing reference is
-          // a backend anomaly worth failing loudly on (500), not a 402.
-          if (!reference)
-            throw new Error(
-              `nearintents-mpp-sdk: swap for ${recipient} reached SUCCESS but reported no settlement transaction hash.`,
-            )
+          const reference = OneClick.settlementReference(status)
+          // A SUCCESS without a swap paid the merchant nothing, and the
+          // deposit can never pay: spend it and refuse the credential.
+          if (!reference || !OneClick.swapped(status)) {
+            await retireDeposit(recipient, deposit.identity)
+            hashOutcome = 'consume'
+            throw new Errors.PaymentInsufficientError({
+              reason: 'the backend reported SUCCESS without performing a swap',
+            })
+          }
           const receipt = Types.toReceipt({
             challengeId: challenge.id,
             reference,
@@ -477,9 +488,6 @@ export function charge(parameters: charge.Parameters) {
             originTxHash: hash,
             reference,
           })
-          // Retire only after the receipt is complete. If the backend reports
-          // SUCCESS before its settlement reference is indexed, the same
-          // credential can be retried instead of being stranded.
           await retireDeposit(recipient, deposit.identity)
           hashOutcome = 'consume'
           return receipt
@@ -584,6 +592,11 @@ export declare namespace charge {
     request: Types.ChargeRequest
     /** Quote deadline (ISO 8601) — the deposit address validity window. */
     deadline: string
+    /**
+     * Latest time (ISO 8601) the quote may be issued to a new requester: the
+     * requested deadline, capped by the quote's. A record without it is stale.
+     */
+    issueUntil?: string | undefined
     timeEstimate: number
     depositMemo: string | null
     state: 'active' | 'settled'

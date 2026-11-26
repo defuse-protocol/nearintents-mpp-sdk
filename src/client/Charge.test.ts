@@ -261,6 +261,27 @@ describe('built-in EVM deposit broadcast', () => {
       /reverted/,
     )
   })
+
+  test.each([
+    ['a recipient of 0x plus 128 hex characters', { recipient: `0x${'ab'.repeat(64)}` }],
+    ['a 39-hex-digit recipient', { recipient: `0x${'a'.repeat(39)}` }],
+    [
+      'an erc721 asset',
+      { currency: 'eip155:42161/erc721:0xaf88d065e77c8cC2239327C5EDb3A432268e5831' },
+    ],
+    [
+      'a 41-hex-digit token address',
+      { currency: 'eip155:42161/erc20:0xaf88d065e77c8cC2239327C5EDb3A432268e58310' },
+    ],
+    ['an amount of 2^256', { amount: (2n ** 256n).toString() }],
+  ] as const)('refuses %s without sending anything', async (_, override) => {
+    const { wallet, sent } = fakeWallet()
+    const method = charge({ walletClient: wallet })
+    await expect(
+      createCredential(method, makeChallenge({ ...arbitrumUsdcRequest, ...override })),
+    ).rejects.toThrow(/nearintents-mpp-sdk/)
+    expect(sent).toHaveLength(0)
+  })
 })
 
 describe('sendDeposit callback (bring-your-own-chain)', () => {

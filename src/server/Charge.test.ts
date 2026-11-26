@@ -14,6 +14,8 @@ const ARB_USDC = 'eip155:42161/erc20:0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
 const NEAR_USDC =
   'near:mainnet/nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1'
 const HASH = '0x9bcff372aee89b648c922b850573b22387c31d693079f5e37cd255814e2d615a'
+/** The mock's first deposit address for an eip155 origin. */
+const DEPOSIT_1 = '0x0000000000000000000000000000000000000001'
 
 let mock: OneClickMock
 
@@ -21,7 +23,7 @@ afterEach(() => {
   mock?.close()
 })
 
-async function setup(overrides: Partial<charge.Parameters> = {}) {
+async function setup({ oneClick, ...overrides }: Partial<charge.Parameters> = {}) {
   mock = await createOneClickMock()
   const store = Store.memory()
   const method = charge({
@@ -30,7 +32,7 @@ async function setup(overrides: Partial<charge.Parameters> = {}) {
     destinationRecipient: 'merchant.near',
     refundTo: '0x2527D02599Ba641c19FEa793cD0F9a6e8457C317',
     amountOut: '1000000',
-    oneClick: { baseUrl: mock.url },
+    oneClick: { baseUrl: mock.url, ...oneClick },
     store,
     settlementTimeout: 5,
     pollInterval: 5,
@@ -78,7 +80,7 @@ describe('402 → deposit → credential → 200 + receipt (success path)', () =
     expect(challenge.method).toBe('nearintents')
     expect(challenge.intent).toBe('charge')
     expect(challenge.expires).toBeDefined()
-    expect(request.recipient).toBe('mock-deposit-1')
+    expect(request.recipient).toBe(DEPOSIT_1)
     expect(request.currency).toBe(ARB_USDC)
     expect(request.amount).toBe('1010000') // minAmountIn + 100 bps slippage buffer
     expect(request.methodDetails).toMatchObject({
@@ -104,7 +106,7 @@ describe('402 → deposit → credential → 200 + receipt (success path)', () =
     expect(receipt.status).toBe('success')
     expect(receipt.challengeId).toBe(challenge.id)
     expect(receipt.originTxHash).toBe(HASH)
-    expect(receipt.reference).toBe('mock-dest-mock-deposit-1')
+    expect(receipt.reference).toBe(`mock-dest-${DEPOSIT_1}`)
     expect(receipt.destinationNetwork).toBe('near:mainnet')
 
     // The deposit notification accelerator was sent.
@@ -119,6 +121,24 @@ describe('402 → deposit → credential → 200 + receipt (success path)', () =
       (first.request as Types.ChargeRequest).recipient,
     )
     expect(mock.requests.filter((r) => r.path === '/v0/quote')).toHaveLength(1)
+  })
+
+  test('a quote is not reused past its requested deadline, even when 1Click returns a later one', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const { handler } = await setup()
+      mock.script({ deadline: new Date(Date.now() + 3 * 24 * 3_600_000).toISOString() })
+      const first = await get402(handler)
+
+      vi.setSystemTime(Date.now() + 3 * 3_600_000)
+      const second = await get402(handler)
+      expect((second.request as Types.ChargeRequest).recipient).not.toBe(
+        (first.request as Types.ChargeRequest).recipient,
+      )
+      expect(mock.requests.filter((r) => r.path === '/v0/quote')).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('every minted quote carries the "mpp" distribution-channel referral by default', async () => {
@@ -377,6 +397,23 @@ describe('backend unavailability and settlement timeout (5xx, never verification
     expect(retry.status).toBe(200)
   })
 
+  test('a 429 and an unparseable 200 from the status endpoint are retried until SUCCESS', async () => {
+    const injected = [
+      new Response('rate limited', { status: 429 }),
+      new Response('<html>maintenance</html>', { headers: { 'content-type': 'text/html' } }),
+    ]
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const path = new URL(input instanceof Request ? input.url : input).pathname
+      const response = path === '/v0/status' ? injected.shift() : undefined
+      return response ?? globalThis.fetch(input, init)
+    }
+    const { handler } = await setup({ oneClick: { fetch } })
+    const challenge = await get402(handler)
+
+    expect((await pay(handler, challenge, HASH)).status).toBe(200)
+    expect(injected).toHaveLength(0)
+  })
+
   test('swap still in flight past the budget → 504; the same credential succeeds later', async () => {
     const { handler } = await setup({ settlementTimeout: 0.1, pollInterval: 10 })
     mock.script({ statuses: ['PROCESSING'] })
@@ -447,28 +484,44 @@ describe('deposit confirmation (spec §Verification step 3)', () => {
     expect((await pay(handler, challenge, observedHash)).status).toBe(200)
   })
 
-  test('SUCCESS without an indexed settlement reference can be retried', async () => {
-    const { handler, store } = await setup()
+  // Deviation from draft-01 (README): SUCCESS needs swap evidence.
+  test.each<[string, { intentHashes?: string[] }]>([
+    ['as reported live (no intent or destination hash)', {}],
+    ['with an intent hash but no output amount', { intentHashes: ['mock-intent-hash'] }],
+  ])(
+    'a SUCCESS without a swap, %s, answers payment-insufficient and spends the deposit',
+    async (_, swapDetails) => {
+      const { handler, store } = await setup()
+      mock.script({ noSwap: true, swapDetails })
+      const challenge = await get402(handler)
+      const recipient = (challenge.request as Types.ChargeRequest).recipient
+
+      const { body } = await problemOf(await pay(handler, challenge, HASH))
+      expect(body.type).toBe('https://paymentauth.org/problems/payment-insufficient')
+      expect(await store.get(`nearintents-mpp-sdk:hash:eip155:42161:${HASH.slice(2)}`)).toEqual({
+        state: 'consumed',
+      })
+      const deposit = (await store.get(`nearintents-mpp-sdk:deposit:${recipient}`)) as {
+        state?: string
+      } | null
+      expect(deposit?.state).toBe('settled')
+    },
+  )
+
+  // Deviation from draft-01 (README): the reference may be the NEAR intent hash.
+  test('a SUCCESS with no destination hash answers 200 with the intent hash as reference', async () => {
+    const { handler } = await setup()
     mock.script({ omitSettlementReferences: true })
     const challenge = await get402(handler)
     const recipient = (challenge.request as Types.ChargeRequest).recipient
-    const authorization = await credentialFor(challenge, HASH)
 
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    const missing = await handler(new Request(URL_, { headers: { authorization } }))
-    consoleError.mockRestore()
-    expect(missing.status).toBe(402)
-    if (missing.status !== 402) throw new Error('unreachable')
-    expect(missing.challenge.status).toBe(500)
-    expect(await store.get(`nearintents-mpp-sdk:hash:eip155:42161:${HASH.slice(2)}`)).toBeNull()
-    const deposit = (await store.get(`nearintents-mpp-sdk:deposit:${recipient}`)) as {
-      state?: string
-    } | null
-    expect(deposit?.state).toBe('active')
-
-    mock.setSettlementReference(recipient, 'indexed-destination-hash')
-    const retry = await handler(new Request(URL_, { headers: { authorization } }))
-    expect(retry.status).toBe(200)
+    const result = await pay(handler, challenge, HASH)
+    expect(result.status).toBe(200)
+    if (result.status !== 200) throw new Error('unreachable')
+    const receipt = Receipt.fromResponse(
+      result.withReceipt(Response.json({})),
+    ) as Types.NearIntentsReceipt
+    expect(receipt.reference).toBe(`mock-intent-${recipient}`)
   })
 })
 

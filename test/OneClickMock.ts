@@ -1,7 +1,19 @@
 import type * as http from 'node:http'
 
-import type { StatusResult, SwapStatus, TokenInfo } from '../src/internal/OneClick.js'
+import {
+  defaultNetworks,
+  type StatusResult,
+  type SwapDetails,
+  type SwapStatus,
+  type TokenInfo,
+} from '../src/internal/OneClick.js'
 import { createServer, type TestServer } from './Http.js'
+
+const evmBlockchains = new Set(
+  Object.entries(defaultNetworks)
+    .filter(([network]) => network.startsWith('eip155:'))
+    .map(([, blockchain]) => blockchain),
+)
 
 /**
  * In-process mock of the 1Click Swap API (quote / deposit-submit / status /
@@ -127,8 +139,15 @@ export type QuoteScript = {
   /** Overrides the whole status sequence (each GET /v0/status consumes one, sticking on the last). */
   statuses?: SwapStatus[]
   destinationTxHash?: string
-  /** SUCCESS temporarily has no destination or NEAR settlement reference. */
+  /** SUCCESS reports no destination-chain or NEAR tx hash; the intent hash stays. */
   omitSettlementReferences?: boolean
+  /**
+   * SUCCESS without a swap, with the field values 1Click reported live for a
+   * no-payout SUCCESS: no intent or destination hash, `amountOut: null`.
+   */
+  noSwap?: boolean
+  /** Merged last into every status's `swapDetails`. */
+  swapDetails?: SwapDetails
   /** Overrides the origin-chain tx hashes reported by /v0/status (defaults to the submitted hashes). */
   originTxHashes?: string[]
   refundReason?: string
@@ -163,8 +182,6 @@ export type OneClickMock = {
   script(script: QuoteScript): void
   /** Replaces the remaining status sequence for a deposit address. */
   setStatuses(depositAddress: string, statuses: SwapStatus[]): void
-  /** Makes a SUCCESS settlement reference visible after an indexing delay. */
-  setSettlementReference(depositAddress: string, hash: string): void
   /** Returns 500 for the next `n` requests (any endpoint). */
   failNextRequests(n: number): void
   /** All requests received, for wire-level assertions. */
@@ -197,11 +214,24 @@ export async function createOneClickMock(
         destinationChainTxHashes: [],
       },
     }
-    if (status === 'SUCCESS') {
+    if (status === 'SUCCESS' && state.script.noSwap) {
+      base.swapDetails = {
+        ...base.swapDetails,
+        intentHashes: [],
+        nearTxHashes: [`mock-poa-mint-${state.depositAddress}`],
+        amountIn: null,
+        amountOut: null,
+        depositedAmount: '10',
+        refundedAmount: '0',
+        refundFee: '10',
+        refundReason: null,
+      }
+    } else if (status === 'SUCCESS') {
       base.swapDetails = {
         ...base.swapDetails,
         amountIn: (state.quote.minAmountIn as string) ?? undefined,
         amountOut: (state.quoteRequest.amount as string) ?? undefined,
+        intentHashes: [`mock-intent-${state.depositAddress}`],
         ...(!state.script.omitSettlementReferences && {
           nearTxHashes: [`mock-near-${state.depositAddress}`],
           destinationChainTxHashes: [
@@ -222,6 +252,8 @@ export async function createOneClickMock(
         depositedAmount: state.script.depositedAmount ?? '1',
       }
     }
+    if (state.script.swapDetails)
+      base.swapDetails = { ...base.swapDetails, ...state.script.swapDetails }
     return base
   }
 
@@ -258,7 +290,12 @@ export async function createOneClickMock(
           return json(400, { message: 'mock only supports wet quotes' })
         const script = scripts.shift() ?? {}
         mintCounter++
-        const depositAddress = script.depositAddress ?? `mock-deposit-${mintCounter}`
+        const origin = tokens.find((token) => token.assetId === quoteRequest.originAsset)
+        const depositAddress =
+          script.depositAddress ??
+          (origin && evmBlockchains.has(origin.blockchain)
+            ? `0x${mintCounter.toString(16).padStart(40, '0')}`
+            : `mock-deposit-${mintCounter}`)
         const depositMemo =
           script.depositMemo ??
           (quoteRequest.depositMode === 'MEMO' ? `memo-${mintCounter}` : undefined)
@@ -349,12 +386,6 @@ export async function createOneClickMock(
       const state = quotes.get(depositAddress)
       if (!state) throw new Error(`No mock quote for deposit address "${depositAddress}".`)
       state.sequence = [...statuses]
-    },
-    setSettlementReference: (depositAddress, hash) => {
-      const state = quotes.get(depositAddress)
-      if (!state) throw new Error(`No mock quote for deposit address "${depositAddress}".`)
-      state.script.omitSettlementReferences = false
-      state.script.destinationTxHash = hash
     },
     failNextRequests: (n) => {
       failCount = n
